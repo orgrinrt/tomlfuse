@@ -1,0 +1,42 @@
+[package]
+name = "tomlfuse"
+version = "0.0.1"
+edition = "2021"
+description = """
+Easily bind any toml file fields and values into build-time constants with hierarchy preserved as modules.
+"""
+authors = ["Ollipekka R. Toimela <N2963@student.jamk.fi>", "orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
+license-file = "LICENSE"
+readme = "README.md"
+publish = true
+
+[dev-dependencies]
+#toml = "^0.8"
+once_cell = { version = "^1.21", features = ["std"] }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+toml = { version = "^0.8" }
+proc-macro2 = { version = "^1.0" }
+quote = { version = "^1.0" }
+syn = { version = "^2.0" }
+globset = "^0.4"
+
+# this comment should end up in the metadata module's documentation string
+[package.metadata]
+# this comment should end up in the FOO constant's documentation string
+foo = "bar"
+
+#
+#
+#
+# this comment should end up in the defaults module's documentation string
+#
+# it should handle multiline comments too
+[package.metadata.defaults]
+# this comment should end up in the FOO constant's documentation string
+# and also it should support multiline
+# comments
+value = 1
