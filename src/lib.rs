@@ -225,13 +225,8 @@ impl Parse for FileInput {
         let file_path_lit: LitStr = input.parse()?;
         let file_path = file_path_lit.value();
 
-        // require a comma
-        input.parse::<Token![,]>()?;
-
-        // then parse the config in braces
-        let content;
-        syn::braced!(content in input);
-        let config = content.parse()?;
+        // then parse the config
+        let config = input.parse()?;
 
         Ok(FileInput {
             file_path,
@@ -294,9 +289,26 @@ impl Parse for PathSegment {
                 Ok(PathSegment::Star)
             }
         } else {
-            // regular identifier
-            let ident = input.parse::<Ident>()?;
-            Ok(PathSegment::Ident(ident))
+            // parse first identifier
+            let mut ident = input.parse::<Ident>()?;
+            let span = ident.span();
+            let mut combined = ident.to_string();
+
+            // keep looking for dash + ident combinations
+            while input.peek(Token![-]) {
+                // consume dash
+                input.parse::<Token![-]>()?;
+
+                // parse the following identifier
+                let next_ident = input.parse::<Ident>()?;
+
+                // combine identifiers with underscore
+                combined.push('_');
+                combined.push_str(&next_ident.to_string());
+            }
+
+            // create new identifier from combined segments
+            Ok(PathSegment::Ident(Ident::new(&combined, span)))
         }
     }
 }
@@ -394,8 +406,7 @@ impl Parse for MacroInput {
             let mut aliases = HashMap::new();
 
             // parse section content
-            // look ahead for left bracket token (can't use Token![[]) directly
-            while !input.is_empty() && !input.peek(token::Bracket) {
+            while !(input.is_empty() || input.peek(token::Bracket)) {
                 let lookahead = input.lookahead1();
 
                 if lookahead.peek(Token![!]) {
@@ -441,23 +452,20 @@ impl Parse for MacroInput {
                     aliases.insert(source, target.to_string());
                 } else {
                     // normal path/pattern for inclusion
-                    let path;
-                    // TODO: we should forget support for literal strings here
-                    if input.peek(LitStr) {
+                    let path = if input.peek(LitStr) {
+                        // TODO: we should forget support for literal strings here
                         let path_lit: LitStr = input.parse()?;
-                        path = path_lit.value();
+                        path_lit.value()
                     } else if input.peek(Ident) {
-                        // parse as dotted path
-                        let dotted_path: DottedPath = input.parse()?;
-                        path = dotted_path.segments.iter()
-                            .map(|id| id.to_string())
-                            .collect::<Vec<_>>()
-                            .join(".");
+                        // first try to parse with dash support
+                        match input.parse::<DottedPath>() {
+                            Ok(dotted_path) => dotted_path.to_string(),
+                            Err(_) => return Err(input.error("Invalid pattern. Cannot parse dashed identifier")),
+                        }
                     } else {
                         return Err(input.error("Expected identifier or string literal"));
-                    }
-
-                    let is_glob = path.contains('*');
+                    };
+                    let is_glob = path.contains('*'); // FIXME: not very robust ":D" needs proper check
                     includes.push(PathPattern { path, is_glob });
                 }
 
@@ -593,12 +601,13 @@ fn generate_section_module(
 
         // check if excluded by any pattern
         if exclude_matcher.is_match(path) {
+            println!("Excluding path: {}", path);
             continue;
         }
 
         // split path into parts for module hierarchy
         let split: Vec<_> = path_ref.split('.').collect();
-        let parts: Vec<&str> = split.iter().copied().filter(|p| *p != split[0]).collect();
+        let parts: Vec<&str> = split.to_vec();
 
         // field name (last part of path)
         let last_part = path_ref.split('.').last().unwrap_or(path_ref);
@@ -622,14 +631,39 @@ fn generate_section_module(
 
         // build the module path, properly handling the nested module structure
         let filtered_parts: Vec<&str> = {
-            // find the position of section.name in the path
-            let section_pos = path_parts.iter().position(|&part| part == section.name);
+            // check if this path matches any specific include pattern
+            let matching_pattern = section.includes.iter().find(|pattern| {
+                if pattern.is_glob {
+                    // for glob patterns, check if path matches
+                    let glob = Glob::new(&pattern.path).unwrap();
+                    glob.compile_matcher().is_match(path_ref)
+                } else {
+                    // for exact patterns, use direct prefix matching
+                    path_ref.starts_with(&pattern.path)
+                }
+            });
 
-            if let Some(pos) = section_pos {
-                // skip everything up to and including the section name
-                path_parts.iter().skip(pos + 1).copied().collect()
+            if let Some(pattern) = matching_pattern {
+                if pattern.is_glob {
+                    // for glob patterns, strip the prefix before "*"
+                    let prefix = pattern.path.trim_end_matches("*").trim_end_matches('.');
+                    let prefix_parts: Vec<_> = prefix.split('.').filter(|p| !p.is_empty()).collect();
+
+                    // get full path parts and strip prefix components
+                    let full_path_parts: Vec<_> = path_ref.split('.').collect();
+
+                    // skip prefix parts but preserve the rest, excluding the leaf item
+                    if full_path_parts.len() > prefix_parts.len() + 1 {
+                        full_path_parts[prefix_parts.len()..full_path_parts.len() - 1].to_vec()
+                    } else {
+                        // if there's no hierarchy after prefix, keep path empty
+                        Vec::new()
+                    }
+                } else {
+                    // for exact matches, use usual path parts
+                    path_parts
+                }
             } else {
-                // no match with section name, use all parts normally
                 path_parts
             }
         };
@@ -655,7 +689,15 @@ fn generate_section_module(
         }
 
         // extract comment if available
-        let doc_comment = match comments.get(path_ref) {
+        // (try both dash and underscore versions when looking up comments)
+        let comment_lookup = match comments.get(path_ref) {
+            Some(comment) => Some(comment),
+            None => {
+                let alt_path = if path_ref.contains('-') { path_ref.replace('-', "_") } else { path_ref.replace('_', "-") };
+                comments.get(&alt_path)
+            }
+        };
+        let doc_comment = match comment_lookup {
             // keep comments original (preserve capitalization)
             Some(comment) => format!("Source: {}\n\n{}", path_ref, comment),
             None => format!("Source: {}", path_ref)

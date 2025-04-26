@@ -93,9 +93,11 @@ pub fn is_workspace_root(path: &Path) -> bool {
 }
 
 pub fn to_valid_ident(input: &str) -> String {
+    // handle potentially somehow still quoted keys by removing quotes
+    let i = input.trim_start_matches('"').trim_end_matches('"');
     // empty input handling
-    if input.is_empty() {
+    if i.is_empty() {
         return "_root".to_string();  // default name
     }
-    input.replace('-', "_")
+    i.replace('-', "_")
 }

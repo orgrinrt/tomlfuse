@@ -1,0 +1,40 @@
+[section]
+key = "value"
+number = 42
+array = ["item1", "item2", "item3"]
+
+[nested]
+inner.value = true
+inner.string = "nested string"
+
+[config]
+debug = false
+settings.timeout = 500
+settings.retries = 3
+logging.level = "info"
+logging.format = "json"
+
+[deep]
+level1.level2.level3.value = true
+level1.level2.other = "sibling"
+level1.alternative.path = "branch"
+standalone = "top-level"
+
+[mixed-types]
+string = "text"
+number = 42
+float = 3.14
+bool = true
+array = [1, 2, 3]
+
+[special-chars]
+with-dash = "dashed"
+with_underscore = "underscore"
+"quoted.key" = "quoted"
+
+[duplicates]
+key = "top"
+nested.key = "middle"
+nested.deeper.key = "bottom"
+first = 1
+second = 2
