@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
+use crate::field::ROOT;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use std::path::{Path, PathBuf};
@@ -97,7 +98,11 @@ pub fn to_valid_ident(input: &str) -> String {
     let i = input.trim_start_matches('"').trim_end_matches('"');
     // empty input handling
     if i.is_empty() {
-        return "_root".to_string();  // default name
+        return ROOT.to_string();  // default name
     }
-    i.replace('-', "_")
+    fix_dashes(i)
+}
+
+pub fn fix_dashes(input: &str) -> String {
+    input.replace('-', "_")
 }

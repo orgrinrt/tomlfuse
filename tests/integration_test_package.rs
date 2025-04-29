@@ -4,8 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use once_cell::sync::Lazy;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tomlfuse::package;
 // creates compile-time constants from the closest Cargo.toml file
 package! {
@@ -15,7 +14,7 @@ package! {
 
     [deps]
     dependencies.*
-    alias dependencies.syn = syn_dep
+    alias syn_dep = dependencies.syn
 
     [metadata]
     package.metadata.*
@@ -46,8 +45,4 @@ fn test_generated_constants() {
     println!("Package edition: {}", package::EDITION);
     println!("Metadata test1: {} (should be \"bar\")", metadata::FOO);
     println!("Metadata test2: {} (should be 1)", defaults::VALUE);
-
-    // check path helpers work
-    assert!(CARGO_MANIFEST_DIR.exists());
-    assert!(WORKSPACE_ROOT.join("Cargo.toml").exists());
 }

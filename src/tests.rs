@@ -6,6 +6,9 @@
 
 #[cfg(test)]
 mod unit_tests {
+    use crate::comments::extract_comments;
+    use crate::field::resolve_field_paths;
+    use crate::pattern::PatternString;
     use crate::utils::convert_value_to_tokens;
     use crate::*;
     use syn::parse_quote;
@@ -98,7 +101,7 @@ name = "test-crate"
     #[test]
     fn test_glob_pattern_matching() {
         // glob pattern matching test
-        let pattern = PathPattern {
+        let pattern = PatternString {
             path: "dependencies.*".to_string(),
             is_glob: true,
         };
@@ -154,7 +157,7 @@ name = "test-crate"
 
         let toml: Value = toml_str.parse().unwrap();
         let mut paths = Vec::new();
-        extract_all_paths(&toml, "", &mut paths);
+        resolve_field_paths(&toml, "", &mut paths);
 
         // verify expected paths extraction
         let path_strings: Vec<_> = paths.iter()
