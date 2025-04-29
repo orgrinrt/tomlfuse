@@ -9,10 +9,10 @@ use tomlfuse::file;
 // generate constants from test.toml
 file! {
     "tests/test.toml"
-    
+
     [main]
     section.*
-    
+
     // test hierarchies with glob patterns
     [config_vals]
     config.*          // should keep settings.timeout as settings::TIMEOUT
@@ -40,9 +40,9 @@ file! {
 
     // test aliases
     [renamed]
-    alias section.key = renamed_key
-    alias deep.level1.level2.level3.value = short_path
-    alias special-chars.with-dash = clean_name
+    alias renamed_key = section.key
+    alias short_path = deep.level1.level2.level3.value
+    alias clean_name = special-chars.with-dash
 
     // original test case
     [original]
@@ -85,7 +85,7 @@ fn test_generated_file_constants() {
     assert!(mixed::BOOL);
     assert_eq!(mixed::WITH_DASH, "dashed");
     assert_eq!(mixed::WITH_UNDERSCORE, "underscore");
-    assert_eq!(mixed::QUOTED_KEY, "quoted");
+    assert_eq!(mixed::quoted::KEY, "quoted");
 
     // direct paths
     assert!(direct::VALUE);

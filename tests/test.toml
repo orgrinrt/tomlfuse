@@ -30,7 +30,7 @@ array = [1, 2, 3]
 [special-chars]
 with-dash = "dashed"
 with_underscore = "underscore"
-"quoted.key" = "quoted"
+"quoted".key = "quoted"
 
 [duplicates]
 key = "top"
