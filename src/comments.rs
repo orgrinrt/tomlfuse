@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 pub struct Comment {
-    // TODO:
+    // TODO: 
 }
 
 // FIXME: make this robust and not so hack-ish
@@ -25,7 +25,7 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             current_path.clear();
 
-            // parse [section] or [section.subsection]
+            // parse [section] or [section.subsection] 
             let section_path = &trimmed[1..trimmed.len() - 1];
             current_path = section_path.split('.').map(String::from).collect();
 
@@ -53,8 +53,7 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
                 // inline comment if present
                 let mut key_comments = current_comments.clone();
                 if let Some(comment_pos) = trimmed.find('#') {
-                    if comment_pos > pos {
-                        // comment after the = sign
+                    if comment_pos > pos {  // comment after the = sign
                         let inline_comment = trimmed[comment_pos + 1..].trim();
                         if !inline_comment.is_empty() {
                             key_comments.push(inline_comment.to_string());
