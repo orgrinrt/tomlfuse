@@ -23,6 +23,7 @@ pub struct TomlField<'a> {
     pub value: &'a Value,
     pub path: String,
     pub relative_path: Option<String>, // path relative to matched pattern
+    pub toml_path: Option<String>, // path in the actual toml file
     pub alias: Option<String>,
     pub parent: Option<usize>,
     pub comment: Option<String>,
@@ -37,6 +38,7 @@ impl Default for TomlField<'_> {
             value: &DEFAULT_VALUE,
             path: String::default(),
             relative_path: None,
+            toml_path: None,
             alias: None,
             parent: None,
             comment: None,
@@ -57,6 +59,7 @@ impl<'a> TomlField<'a> {
             value,
             path: path.to_string(),
             relative_path: None,
+            toml_path: None,
             alias: None,
             parent,
             comment: None,
@@ -69,6 +72,7 @@ impl<'a> TomlField<'a> {
             value,
             path: ROOT.to_string(),
             relative_path: None,
+            toml_path: None,
             alias: None,
             parent: None,
             comment: None,
@@ -78,11 +82,18 @@ impl<'a> TomlField<'a> {
         self.relative_path = Some(relative_path.to_string());
         self
     }
+    pub fn with_toml_path(mut self, toml_path: &str) -> Self {
+        self.toml_path = Some(toml_path.to_string());
+        self
+    }
     pub fn with_comment(mut self, comment: &str) -> Self {
         self.comment = Some(comment.to_string());
         self
     }
     pub fn with_alias(mut self, alias: &str) -> Self {
+        if alias == ROOT {
+            return self;
+        }
         self.alias = Some(alias.to_string());
         self
     }
@@ -195,7 +206,8 @@ impl<'a> TomlFields<'a> {
             }
         }
 
-        // TODO: this is redundant, since we already bake the aliases into the name and the path in the extract method
+        // TODO: this is redundant, since we already bake the aliases into the name and the path in the extract method,
+        //       we should include the alias there I think
         for (alias, orig) in self.aliases.as_ref().unwrap_or(&HashMap::new()) {
             if let Some(field) = self.fields.iter_mut().find(|f| f.path == orig.to_string()) {
                 field.alias = Some(alias.to_string());
@@ -204,10 +216,19 @@ impl<'a> TomlFields<'a> {
 
         for field in &mut self.fields {
             if let Some(comment) = self.comments.as_ref().and_then(|c| {
-                let orig = c.get(&field.path);
-                if orig.is_none() {
-                    c.get(&snake_to_kebab(&field.path))
-                } else { None }
+                let mut out = c.get(&field.path);
+                if out.is_none() {
+                    out = c.get(&snake_to_kebab(&field.path));
+                }
+                if out.is_none() {
+                    if let Some(ref toml_path) = field.toml_path {
+                        out = c.get(toml_path);
+                        if out.is_none() {
+                            out = c.get(&snake_to_kebab(toml_path));
+                        }
+                    }
+                }
+                out
             }) {
                 // println!(" >> Found comment for field {}: {}", field.path, comment);
                 field.comment = Some(comment.to_string());
@@ -248,7 +269,7 @@ impl<'a> TomlFields<'a> {
         self
     }
 
-    // Find the section a path belongs to and the relative path within that section
+    // find the section a path belongs to and the relative path within that section
     fn get_relative_path(&self, path: &str) -> Option<String> {
         let mut best_match: Option<String> = None;
         for pat in &self.patterns.literals {
@@ -365,6 +386,7 @@ impl<'a> TomlFields<'a> {
         _path: &str,
         parent_idx: usize,
     ) {
+        let orig_path = _path.to_string();
         let alias = self.aliases.as_ref().and_then(|aliases| {
             let _processed_path = to_valid_ident(_path);
             aliases.iter().find_map(move |(alias, orig)| {
@@ -379,6 +401,16 @@ impl<'a> TomlFields<'a> {
                 }
             })
         });
+        let alias_name = alias
+            .as_ref()
+            .and_then(|(alias, _)| {
+                if alias == &"*" {
+                    None
+                } else {
+                    Some(alias)
+                }
+            })
+            .map(|alias| alias.to_string());
         let is_alias = alias.is_some();
         let aliased_path = if let Some((alias, _)) = alias {
             let _psvec = _path.split('.').collect::<Vec<_>>();
@@ -406,7 +438,9 @@ impl<'a> TomlFields<'a> {
                 &path,
                 value,
                 Some(parent_idx),
-            );
+            )
+                .with_alias(alias_name.as_deref().unwrap_or(ROOT))
+                .with_toml_path(&orig_path);
 
             (field, self.fields.len()) // idx where this field will be placed
         };
