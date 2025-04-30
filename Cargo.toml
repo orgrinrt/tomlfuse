@@ -39,7 +39,7 @@ foo = "bar"
 #
 # it should handle multiline comments too
 [package.metadata.defaults]
-# this comment should end up in the FOO constant's documentation string
+# this comment should end up in the VALUE constant's documentation string
 # and also it should support multiline
 # comments
 value = 1
