@@ -92,7 +92,8 @@ pub fn get_doc_comment(
 ) -> TokenStream2 {
     // println!(" >> Figuring out the comment for field: {}", field.name);
     let comment_maybe = field.comment.clone();
-    let comment = comment_maybe.unwrap_or_default();
+    // let comment = comment_maybe.unwrap_or_default().replace("\n", "\n\n").replace("\\\n", "\n\n"); // proper newlines
+    let comment = comment_maybe.unwrap_or_default(); // TODO: actually let's try and parse empty comment lines as \n instead of above wholesale
     let lit = LitStr::new(&comment, proc_macro2::Span::call_site());
     if comment.is_empty() {
         quote! {}

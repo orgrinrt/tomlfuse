@@ -21,7 +21,8 @@ enum StringState {
 /// This function parses the given toml content and associates comments with keys and section headers.
 /// Both preceding (above) and inline (same-line) comments are captured. Multi-line preceding comments
 /// are joined with `\n`, and inline comments are appended. Orphaned comments not followed by a key or
-/// section header are ignored. Comment groups reset on blank lines.
+/// section header are ignored. Comment groups reset on blank lines. Empty comment lines (just `#`) 
+/// are preserved as additional newlines in the output.
 ///
 /// # Parameters
 ///
@@ -129,7 +130,14 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
 
         // comments
         if trimmed.starts_with('#') {
-            current_comments.push(trimmed[1..].trim().to_string());
+            let comment_text = trimmed[1..].trim();
+
+            // preserve empty comments as empty strings to create double newlines
+            if comment_text.is_empty() {
+                current_comments.push("".to_string());
+            } else {
+                current_comments.push(comment_text.to_string());
+            }
             continue;
         }
 
@@ -257,6 +265,22 @@ key = 10 # just inline
         assert_eq!(
             comments.get("key"),
             Some(&"just inline".to_string())
+        );
+    }
+
+    #[test]
+    fn test_empty_comment_lines() {
+        let toml = r#"
+    # first line
+    #
+    # third line
+    key = true
+    "#;
+        let comments = extract_comments(toml);
+        // empty comment line should create double newline
+        assert_eq!(
+            comments.get("key"),
+            Some(&"first line\n\nthird line".to_string())
         );
     }
 
