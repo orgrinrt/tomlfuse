@@ -4,8 +4,9 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
+use crate::get_doc_comment;
 use crate::pattern::Pattern;
-use crate::utils::to_valid_ident;
+use crate::utils::{convert_value_to_tokens, to_valid_ident};
 use globset::GlobSet;
 use once_cell::sync::Lazy;
 use quote::{format_ident, quote, ToTokens};
@@ -24,6 +25,7 @@ pub struct TomlField<'a> {
     pub relative_path: Option<String>, // path relative to matched pattern
     pub alias: Option<String>,
     pub parent: Option<usize>,
+    pub comment: Option<String>,
 }
 
 impl Default for TomlField<'_> {
@@ -37,6 +39,7 @@ impl Default for TomlField<'_> {
             relative_path: None,
             alias: None,
             parent: None,
+            comment: None,
         }
     }
 }
@@ -56,6 +59,7 @@ impl<'a> TomlField<'a> {
             relative_path: None,
             alias: None,
             parent,
+            comment: None,
         }
     }
 
@@ -67,13 +71,17 @@ impl<'a> TomlField<'a> {
             relative_path: None,
             alias: None,
             parent: None,
+            comment: None,
         }
     }
     pub fn with_relative_path(mut self, relative_path: &str) -> Self {
         self.relative_path = Some(relative_path.to_string());
         self
     }
-    // TODO: we don't actually handle aliases yet
+    pub fn with_comment(mut self, comment: &str) -> Self {
+        self.comment = Some(comment.to_string());
+        self
+    }
     pub fn with_alias(mut self, alias: &str) -> Self {
         self.alias = Some(alias.to_string());
         self
@@ -160,8 +168,8 @@ pub struct TomlFields<'a> {
     pub fields: Vec<TomlField<'a>>,
     pub patterns: Patterns,
     pub aliases: Option<HashMap<Pattern, Pattern>>,
+    pub comments: Option<HashMap<String, String>>,
 }
-
 impl<'a> TomlFields<'a> {
     pub fn new() -> Self {
         TomlFields {
@@ -169,6 +177,7 @@ impl<'a> TomlFields<'a> {
             fields: Vec::new(),
             patterns: Patterns::new(),
             aliases: None,
+            comments: None,
         }
     }
     pub fn build(mut self) -> Self {
@@ -190,6 +199,13 @@ impl<'a> TomlFields<'a> {
                 field.alias = Some(alias.to_string());
             }
         }
+
+        for field in &mut self.fields {
+            if let Some(comment) = self.comments.as_ref().and_then(|c| c.get(&field.path)) {
+                field.comment = Some(comment.to_string());
+            }
+        }
+
         self
     }
     pub fn with_root(mut self, value: &'a Value) -> Self {
@@ -214,6 +230,13 @@ impl<'a> TomlFields<'a> {
     }
     pub fn with_pat_literal(mut self, pattern: String) -> Self {
         self.patterns.add_literal(pattern);
+        self
+    }
+    pub fn with_comments(
+        mut self,
+        comments: HashMap<String, String>,
+    ) -> Self {
+        self.comments = Some(comments);
         self
     }
 
@@ -266,6 +289,7 @@ impl<'a> TomlFields<'a> {
             patterns: self.patterns.clone(),
             root_value: self.root_value,
             aliases: self.aliases.clone(),
+            comments: self.comments.clone(),
         }
     }
 
@@ -311,6 +335,7 @@ impl<'a> TomlFields<'a> {
             patterns: self.patterns.clone(),
             root_value: self.root_value,
             aliases: self.aliases.clone(),
+            comments: self.comments.clone(),
         }
     }
 
@@ -469,7 +494,7 @@ impl<'a> TomlFields<'a> {
         let mod_ident: Option<syn::Ident> = if !module_name.is_empty() {
             Some(format_ident!(
                 "{}",
-                crate::utils::to_valid_ident(module_name).to_lowercase()
+                to_valid_ident(module_name).to_lowercase()
             ))
         } else {
             None
@@ -483,12 +508,16 @@ impl<'a> TomlFields<'a> {
             .iter()
             .filter(|f| !f.is_table())
         {
-            let (ty, val) = crate::utils::convert_value_to_tokens(field.value);
+            let (ty, val) = convert_value_to_tokens(field.value);
             let const_name = format_ident!(
                 "{}",
-                crate::utils::to_valid_ident(&field.name).to_uppercase()
+                to_valid_ident(&field.name).to_uppercase()
             );
-            mod_tokens.extend(quote! { pub const #const_name: #ty = #val; });
+            let comment = get_doc_comment(self.get_field(idx).expect("Expected this to be a valid field"));
+            mod_tokens.extend(quote! { 
+                #comment
+                pub const #const_name: #ty = #val; 
+            });
         }
 
         // generate submodules for recursive hierarchy
@@ -506,8 +535,10 @@ impl<'a> TomlFields<'a> {
 
         if !mod_tokens.is_empty() {
             tokens.extend(if mod_ident.is_some() {
+                let comment = get_doc_comment(self.get_field(idx).expect("Expected this to be a valid field"));
                 let _mod_ident = mod_ident.unwrap();
                 quote! {
+                    #comment
                     pub mod #_mod_ident {
                         #mod_tokens
                     }

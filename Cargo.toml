@@ -13,6 +13,7 @@ publish = true
 [dev-dependencies]
 #toml = "^0.8"
 #once_cell = { version = "^1.21", features = ["std"] }
+tempfile = "3.19.1"
 
 [lib]
 proc-macro = true
@@ -24,6 +25,7 @@ quote = { version = "^1.0" }
 syn = { version = "^2.0" }
 globset = "^0.4"
 once_cell = { version = "^1.21", features = ["std"] }
+
 
 # this comment should end up in the metadata module's documentation string
 [package.metadata]

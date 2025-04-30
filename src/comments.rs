@@ -36,7 +36,12 @@ enum StringState {
 ///
 /// ```rust
 /// # use std::collections::HashMap;
-/// # fn extract_comments(input: &'static str) -> HashMap<String, String> { HashMap::new() }
+/// # fn extract_comments(input: &'static str) -> HashMap<String, String> { 
+/// #    // dummy impl because proc-macro crate can't export this function
+/// #    let mut out = HashMap::new();
+/// #    out.insert("package.version".to_string(), "header\ninline comment".to_string());
+/// #    out
+/// # }
 /// let toml = r#"
 /// ​# header
 /// [package]

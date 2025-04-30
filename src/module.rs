@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
+use crate::comments::extract_comments;
 use crate::field::TomlFields;
 use crate::pattern::Pattern;
 use crate::utils;
@@ -28,6 +29,7 @@ pub struct RootModuleSource {
     pub inclusion_pats: Vec<Pattern>,
     pub exclusion_pats: Vec<Pattern>,
     pub aliases: HashMap<Pattern, Pattern>,
+    pub comments: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -38,7 +40,7 @@ pub struct RootModule<'a> {
 }
 
 impl<'a> RootModule<'a> {
-    pub fn new(source: RootModuleSource, toml_path: &'a str) -> Self {
+    pub fn new(mut source: RootModuleSource, toml_path: &'a str) -> Self {
         let toml_raw = fs::read_to_string(toml_path).unwrap_or(
             fs::read_to_string(utils::find_workspace_root().join(toml_path)).unwrap_or(
                 fs::read_to_string(
@@ -54,6 +56,7 @@ impl<'a> RootModule<'a> {
         let toml: Value = toml_raw
             .parse()
             .unwrap_or_else(|_| panic!("Failed to parse toml file: {}", toml_path));
+        source.comments = extract_comments(&toml_raw);
         RootModule::from(source).with_toml(toml).build()
     }
 
@@ -92,6 +95,13 @@ impl<'a> RootModule<'a> {
                     .expect("Expected a succesful glob set build"),
             ))
             .with_pat_literals(literals)
+            .with_comments(
+                self.source
+                    .comments
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            )
             .with_aliases(Some(self.source.aliases.clone()));
         RootModule {
             fields: fields.build(),
@@ -149,6 +159,7 @@ impl Parse for RootModuleSource {
             inclusion_pats,
             exclusion_pats,
             aliases,
+            comments: HashMap::new(),
         })
     }
 }
