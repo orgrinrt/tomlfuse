@@ -97,7 +97,7 @@ pub fn get_doc_comment(
     if comment.is_empty() {
         quote! {}
     } else {
-        println!("     >> It did have a comment! ({})", comment);
+        // println!("     >> It did have a comment! ({})", comment);
         quote! {
             #[doc = #lit]
         }

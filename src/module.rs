@@ -74,13 +74,13 @@ impl<'a> RootModule<'a> {
         for pattern in &self.source.inclusion_pats {
             inclusions
                 .add(Glob::new(&pattern.to_string()).expect("Expected a valid glob pat string"));
-            println!("Added inclusion pattern: {}", pattern);
+            // println!("Added inclusion pattern: {}", pattern);
             literals.push(pattern.to_string());
         }
         for pattern in &self.source.exclusion_pats {
             exclusions
                 .add(Glob::new(&pattern.to_string()).expect("Expected a valid glob pat string"));
-            println!("Added exclusion pattern: {}", pattern);
+            // println!("Added exclusion pattern: {}", pattern);
             literals.push(format!("!{}", pattern.to_string()));
         }
         let fields = TomlFields::from(self.toml.clone())
