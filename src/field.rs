@@ -6,13 +6,13 @@
 
 use crate::get_doc_comment;
 use crate::pattern::Pattern;
-use crate::utils::{convert_value_to_tokens, to_valid_ident};
+use crate::utils::{convert_value_to_tokens, snake_to_kebab, to_valid_ident};
 use globset::GlobSet;
 use once_cell::sync::Lazy;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use std::collections::HashMap;
 use std::string::ToString;
-use syn::__private::TokenStream2;
 use toml::Value;
 
 pub const ROOT: &str = "";
@@ -181,7 +181,7 @@ impl<'a> TomlFields<'a> {
         }
     }
     pub fn build(mut self) -> Self {
-        println!("Building TomlFields...");
+        // println!("Building TomlFields...");
         self.extract_matched_paths_from_value(
             self.root_value
                 .expect("Expected a root value when building TomlFields"),
@@ -194,6 +194,8 @@ impl<'a> TomlFields<'a> {
                 self.fields[i].relative_path = Some(rel_path);
             }
         }
+
+        // TODO: this is redundant, since we already bake the aliases into the name and the path in the extract method
         for (alias, orig) in self.aliases.as_ref().unwrap_or(&HashMap::new()) {
             if let Some(field) = self.fields.iter_mut().find(|f| f.path == orig.to_string()) {
                 field.alias = Some(alias.to_string());
@@ -201,7 +203,13 @@ impl<'a> TomlFields<'a> {
         }
 
         for field in &mut self.fields {
-            if let Some(comment) = self.comments.as_ref().and_then(|c| c.get(&field.path)) {
+            if let Some(comment) = self.comments.as_ref().and_then(|c| {
+                let orig = c.get(&field.path);
+                if orig.is_none() {
+                    c.get(&snake_to_kebab(&field.path))
+                } else { None }
+            }) {
+                // println!(" >> Found comment for field {}: {}", field.path, comment);
                 field.comment = Some(comment.to_string());
             }
         }
@@ -376,7 +384,7 @@ impl<'a> TomlFields<'a> {
             let _psvec = _path.split('.').collect::<Vec<_>>();
             let _ps = _psvec[.._psvec.len().saturating_sub(1)].to_vec().join(".");
             let out = format!("{}.{}", _ps, alias);
-            println!("    >> Found alias for path {}: {}", _path, &out);
+            // println!("    >> Found alias for path {}: {}", _path, &out);
             out
         } else {
             _path.to_string()
@@ -513,7 +521,7 @@ impl<'a> TomlFields<'a> {
                 "{}",
                 to_valid_ident(&field.name).to_uppercase()
             );
-            let comment = get_doc_comment(self.get_field(idx).expect("Expected this to be a valid field"));
+            let comment = get_doc_comment(field);
             mod_tokens.extend(quote! { 
                 #comment
                 pub const #const_name: #ty = #val; 

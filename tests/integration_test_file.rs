@@ -48,6 +48,9 @@ file! {
     [original]
     config.*
     nested.inner.*
+    
+    [all]
+    *
 }
 
 #[test]

@@ -90,21 +90,17 @@ pub fn value_to_string_token(value: &Value) -> TokenStream2 {
 pub fn get_doc_comment(
     field: &TomlField,
 ) -> TokenStream2 {
-    let comment_maybe = field
-        .comment.clone();
-    let comment = if let Some(c) = comment_maybe {
-        // FIXME: proper escaping
-        c.replace("`", "\\`").replace("'", "\\'")
-    } else {
-        String::new()
-    };
+    // println!(" >> Figuring out the comment for field: {}", field.name);
+    let comment_maybe = field.comment.clone();
+    let comment = comment_maybe.unwrap_or_default();
     let lit = LitStr::new(&comment, proc_macro2::Span::call_site());
     if comment.is_empty() {
         quote! {}
     } else {
+        println!("     >> It did have a comment! ({})", comment);
         quote! {
-                #[doc = #lit]
-            }
+            #[doc = #lit]
+        }
     }
 }
 
@@ -131,7 +127,7 @@ pub fn find_workspace_root() -> PathBuf {
 
 /// Checks if the given path points to a Cargo.toml file containing a `[workspace]` table.
 ///
-/// Returns `true` if the path exists, can be read, parsed as TOML, and has a workspace table.
+/// Returns `true` if the path exists, can be read, parsed as toml, and has a workspace table.
 #[cold]
 pub fn is_workspace_root(path: &Path) -> bool {
     if let Ok(content) = fs::read_to_string(path) {
@@ -142,7 +138,7 @@ pub fn is_workspace_root(path: &Path) -> bool {
     false
 }
 
-/// Normalizes a raw TOML key into a valid Rust identifier (but still as String).
+/// Normalizes a raw toml key into a valid Rust identifier (but still as String).
 ///
 /// - Strips surrounding quotes if present
 /// - Replaces dashes with underscores
@@ -155,23 +151,32 @@ pub fn to_valid_ident(input: &str) -> String {
     if i.is_empty() {
         return ROOT.to_string(); // default name
     }
-    fix_dashes(i)
+    kebab_to_snake(i)
 }
 
 /// Replaces all dashes in a string with underscores.
 ///
-/// Used for converting kebab-case to snake_case in TOML keys.
+/// Used for converting kebab-case to snake_case in toml keys.
 #[inline]
-pub fn fix_dashes(input: &str) -> String {
+pub fn kebab_to_snake(input: &str) -> String {
     // TODO: more sophisticated conversion and covering edge cases that I assume have to exist
     input.replace('-', "_")
 }
+/// Replaces all underscores in a string with dashes.
+///
+/// Used for converting snake_case to kebab-case in toml keys.
+#[inline]
+pub fn snake_to_kebab(input: &str) -> String {
+    input.replace('_', "-")
+}
+// TODO: unit test for this, but in practice unless we expand or add to this, it should do what it says on the tin
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::field::TomlField;
+    use std::f64::consts::PI;
     use std::fs;
     use tempfile::TempDir;
     use toml::Value;
@@ -202,7 +207,7 @@ mod tests {
         assert_eq!(ty.to_string(), "i64");
         // numeric literal includes type suffix in output
         assert_eq!(val.to_string(), "42i64");
-        let float = Value::Float(3.14);
+        let float = Value::Float(PI);
         let (ty, val) = convert_value_to_tokens(&float);
         assert_eq!(ty.to_string(), "f64");
         assert!(val.to_string().starts_with("3.14"));
@@ -372,10 +377,10 @@ mod tests {
 
     #[test]
     fn test_fix_dashes() {
-        assert_eq!(fix_dashes("no-dashes-here"), "no_dashes_here");
-        assert_eq!(fix_dashes("already_good"), "already_good");
-        assert_eq!(fix_dashes("mixed-case_style"), "mixed_case_style");
-        assert_eq!(fix_dashes("-leading-dash"), "_leading_dash");
-        assert_eq!(fix_dashes("trailing-dash-"), "trailing_dash_");
+        assert_eq!(kebab_to_snake("no-dashes-here"), "no_dashes_here");
+        assert_eq!(kebab_to_snake("already_good"), "already_good");
+        assert_eq!(kebab_to_snake("mixed-case_style"), "mixed_case_style");
+        assert_eq!(kebab_to_snake("-leading-dash"), "_leading_dash");
+        assert_eq!(kebab_to_snake("trailing-dash-"), "trailing_dash_");
     }
 }
