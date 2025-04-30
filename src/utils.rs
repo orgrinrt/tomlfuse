@@ -14,51 +14,36 @@ use toml::Value;
 pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
     match value {
         Value::String(s) => (quote! { &'static str }, quote! { #s }),
-        Value::Integer(i) => {
-            let i_val = *i as i64;
-            (quote! { i64 }, quote! { #i_val })
-        }
+        Value::Integer(i) => (quote! { i64 }, quote! { #i }),
         Value::Float(f) => (quote! { f64 }, quote! { #f }),
-        Value::Boolean(b) => (
-            quote! { bool },
-            if *b {
-                quote! { true }
-            } else {
-                quote! { false }
-            },
-        ),
+        Value::Boolean(b) => (quote! { bool }, quote! { #b }),
         Value::Datetime(dt) => {
             let dt_str = dt.to_string();
             (quote! { DateTime }, quote! { #dt_str })
         }
         Value::Array(arr) => {
-            if arr.iter().all(|v| matches!(v, Value::String(_))) {
-                let strings: Vec<_> = arr
-                    .iter()
-                    .filter_map(
-                        |v| {
-                            if let Value::String(s) = v {
-                                Some(s.clone())
-                            } else {
-                                None
-                            }
-                        },
-                    )
-                    .collect();
-
-                (
-                    quote! { &'static [&'static str] },
-                    quote! { &[#(#strings),*] },
-                )
+            if arr.is_empty() {
+                (quote! { &'static [&'static str] }, quote! { &[] })
             } else {
-                // fallback to string for other array types
-                // FIXME: not very robust, should handle each type properly
-                let array_str = format!("{:?}", arr);
-                (quote! { &'static str }, quote! { #array_str })
+                // single-step recurse to get type and value for the first element
+                let (elem_ty, _) = convert_value_to_tokens(&arr[0]);
+                // check all elements are of the same variant as the first (should be the case for most use cases)
+                let same_type = arr.iter().all(|v| std::mem::discriminant(v) == std::mem::discriminant(&arr[0]));
+                if same_type {
+                    let elems: Vec<_> = arr.iter().map(|v| {
+                        let (_, val) = convert_value_to_tokens(v);
+                        val
+                    }).collect();
+                    (quote! { &'static [#elem_ty] }, quote! { &[#(#elems),*] })
+                } else {
+                    // fallback for mixed types
+                    let array_str = format!("{:?}", arr);
+                    (quote! { &'static str }, quote! { #array_str })
+                }
             }
         }
-        // fall back to string for other types
         _ => {
+            // fallback for unsupported types, are there any we should support?
             let val_str = format!("{}", value);
             (quote! { &'static str }, quote! { #val_str })
         }
@@ -110,6 +95,7 @@ pub fn to_valid_ident(input: &str) -> String {
     fix_dashes(i)
 }
 
+// separate this logic for future expansion so that it applies outside of valid idents too
 pub fn fix_dashes(input: &str) -> String {
     input.replace('-', "_")
 }

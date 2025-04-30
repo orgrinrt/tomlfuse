@@ -58,6 +58,8 @@ fn test_generated_file_constants() {
     assert_eq!(main::NUMBER, 42);
     assert_eq!(main::ARRAY.len(), 3);
     assert_eq!(main::ARRAY[0], "item1");
+    assert_eq!(main::ARRAY[1], "item2");
+    assert_eq!(main::ARRAY[2], "item3");
 
     // config section with hierarchy preserved
     assert!(!config_vals::DEBUG); // should break if the type is not properly parsed as bool
@@ -82,6 +84,10 @@ fn test_generated_file_constants() {
     assert_eq!(mixed::STRING, "text");
     assert_eq!(mixed::NUMBER, 42);
     assert_eq!(mixed::FLOAT, 3.14);
+    assert_eq!(mixed::ARRAY.len(), 3);
+    assert_eq!(mixed::ARRAY[0], 1);
+    assert_eq!(mixed::ARRAY[1], 2);
+    assert_eq!(mixed::ARRAY[2], 3);
     assert!(mixed::BOOL);
     assert_eq!(mixed::WITH_DASH, "dashed");
     assert_eq!(mixed::WITH_UNDERSCORE, "underscore");

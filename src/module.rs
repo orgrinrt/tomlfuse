@@ -123,13 +123,12 @@ impl Parse for RootModuleSource {
     fn parse(input: ParseStream) -> SynResult<Self> {
         let bracket_stream;
         let _bracket = syn::bracketed!(bracket_stream in input);
-        let module_name: Ident = bracket_stream.parse()?;
+        let root_mod_name: Ident = bracket_stream.parse()?;
         let mut inclusion_pats = Vec::new();
         let mut exclusion_pats = Vec::new();
         let mut aliases: HashMap<Pattern, Pattern> = HashMap::new();
 
         while !input.peek(token::Bracket) && !input.is_empty() {
-            // check for alias keyword
             if input.peek(kw::alias) {
                 let _kw: kw::alias = input.parse()?;
                 let alias: Pattern = input.parse()?;
@@ -138,7 +137,6 @@ impl Parse for RootModuleSource {
                 aliases.insert(alias, path);
             } else if input.peek(Token![!]) {
                 let _negation: Token![!] = input.parse()?;
-                // this is an exclusion pattern
                 let pattern = Pattern::parse(input)?;
                 exclusion_pats.push(pattern)
             } else {
@@ -147,7 +145,7 @@ impl Parse for RootModuleSource {
             }
         }
         Ok(RootModuleSource {
-            name: module_name,
+            name: root_mod_name,
             inclusion_pats,
             exclusion_pats,
             aliases,
@@ -158,9 +156,9 @@ impl Parse for RootModuleSource {
 impl<'a> ToTokens for RootModule<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let fields = &self.fields;
-        let module_name = &self.source.name;
+        let root_mod_name = &self.source.name;
         tokens.extend(quote! {
-            pub mod #module_name {
+            pub mod #root_mod_name {
                 #fields
             }
         });
