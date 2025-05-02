@@ -10,7 +10,7 @@ use input::MacroInput;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, ToTokens, TokenStreamExt};
+use quote::quote;
 use std::env;
 use std::path::PathBuf;
 use syn::{parse_macro_input, LitStr};

@@ -68,6 +68,7 @@ pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
 ///
 /// String values are kept as-is, other types are converted to string form.
 #[inline]
+#[allow(dead_code)] // NOTE: useful api for future
 pub fn value_to_string_token(value: &Value) -> TokenStream2 {
     match value {
         Value::String(s) => quote! { #s },

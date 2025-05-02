@@ -44,6 +44,7 @@ impl PartialEq for Pattern {
         true
     }
 
+    // TODO: consider if this explicit impl is necessary, is this ultimately even different from the derived one?
     fn ne(&self, other: &Self) -> bool {
         if self.segments.len() != other.segments.len() {
             return true;
@@ -104,8 +105,11 @@ enum PatternSegment {
     Star,       // *
     DoubleStar, // **
     Negation,   // ! // TODO: what kind of name would this be, negation seems wrong?
+    #[allow(dead_code)] // NOTE: useful api for future
     Braces(Vec<PatternSegment>),
+    #[allow(dead_code)] // NOTE: useful api for future
     Brackets(Vec<PatternSegment>),
+    #[allow(dead_code)] // NOTE: useful api for future
     Parens,
     // TODO: what else do we support?
 }

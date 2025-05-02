@@ -10,8 +10,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum StringState {
     None,
-    SingleQuote,
-    DoubleQuote,
+    // SingleQuote,
+    // DoubleQuote,
     MultiSingleQuote,
     MultiDoubleQuote,
 }

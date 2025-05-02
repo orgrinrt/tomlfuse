@@ -92,6 +92,8 @@ impl<'a> TomlField<'a> {
             comment: None,
         }
     }
+    // FIXME: unify construction to use builder pattern instead of whatever we do above and in From impls
+    #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_relative_path(mut self, relative_path: &str) -> Self {
         self.relative_path = Some(relative_path.to_string());
         self
@@ -100,6 +102,7 @@ impl<'a> TomlField<'a> {
         self.toml_path = Some(toml_path.to_string());
         self
     }
+    #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_comment(mut self, comment: &str) -> Self {
         self.comment = Some(comment.to_string());
         self
@@ -111,10 +114,12 @@ impl<'a> TomlField<'a> {
         self.alias = Some(alias.to_string());
         self
     }
+    #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_path(mut self, path: &str) -> Self {
         self.path = path.to_string();
         self
     }
+    #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_name(mut self, name: &str) -> Self {
         self.name = name.to_string();
         self
@@ -123,6 +128,7 @@ impl<'a> TomlField<'a> {
         self.value = value;
         self
     }
+    #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_parent(mut self, parent: usize) -> Self {
         self.parent = Some(parent);
         self
@@ -141,23 +147,23 @@ impl<'a> TomlField<'a> {
     // get effective module path based on section/pattern matching
     pub fn effective_module_path(&self) -> Vec<String> {
         // println!(" >> Resolving effective module path for: {}", self.path);
-        let mut output = Vec::new();
+        let output =
         // use relative path if available (pattern matching)
         if let Some(ref rel_path) = self.relative_path {
-            output = rel_path
+            rel_path
                 .split('.')
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
-                .collect();
+                .collect()
         } else {
             // if no relative path, use full path
-            output = self
+            self
                 .path
                 .split('.')
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
-                .collect();
-        }
+                .collect()
+        };
         // println!("    >> Effective module path: {:?}", output);
         output
     }
@@ -193,12 +199,12 @@ impl Patterns {
         self.literals = literals;
         self
     }
-    pub fn add_literal(&mut self, literal: String) {
-        if self.literals.is_empty() {
-            self.literals = Vec::new();
-        }
-        self.literals.push(literal);
-    }
+    // pub fn add_literal(&mut self, literal: String) {
+    //     if self.literals.is_empty() {
+    //         self.literals = Vec::new();
+    //     }
+    //     self.literals.push(literal);
+    // }
 }
 
 /// Collection of TOML fields with pattern matching capabilities.
@@ -304,10 +310,10 @@ impl<'a> TomlFields<'a> {
         self.patterns = self.patterns.with_literals(patterns);
         self
     }
-    pub fn with_pat_literal(mut self, pattern: String) -> Self {
-        self.patterns.add_literal(pattern);
-        self
-    }
+    // pub fn with_pat_literal(mut self, pattern: String) -> Self {
+    //     self.patterns.add_literal(pattern);
+    //     self
+    // }
     pub fn with_comments(mut self, comments: HashMap<String, String>) -> Self {
         self.comments = Some(comments);
         self
@@ -348,6 +354,7 @@ impl<'a> TomlFields<'a> {
         best_match
     }
 
+    #[allow(dead_code)] // NOTE: might be useful later
     /// Gets direct child fields based on the original TOML structure.
     ///
     /// # Parameters
@@ -373,6 +380,7 @@ impl<'a> TomlFields<'a> {
         }
     }
 
+    #[allow(dead_code)] // NOTE: useful api for future
     pub fn get_relative_parent_of(&'a self, this_idx: usize) -> &'a TomlField<'a> {
         let this_field = self.get_field(this_idx).expect("Expected a valid field");
         self.get_relative_parent_of_field(this_field)
