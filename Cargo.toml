@@ -3,16 +3,14 @@ name = "tomlfuse"
 version = "0.0.1"
 edition = "2021"
 description = """
-Easily bind any toml file fields and values into build-time constants with hierarchy preserved as modules.
+Easily bind toml fields into properly typed build-time constants with flexible pattern matching and hierarchies.
 """
-authors = ["Ollipekka R. Toimela <N2963@student.jamk.fi>", "orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
+authors = ["orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
 license-file = "LICENSE"
 readme = "README.md"
 publish = true
 
 [dev-dependencies]
-#toml = "^0.8"
-#once_cell = { version = "^1.21", features = ["std"] }
 tempfile = "3.19.1"
 
 [lib]
@@ -26,6 +24,7 @@ syn = { version = "^2.0" }
 globset = "^0.4"
 once_cell = { version = "^1.21", features = ["std"] }
 
+# NOTE: below metadata is for test purposes only
 
 # this comment should end up in the metadata module's documentation string
 [package.metadata]
