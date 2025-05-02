@@ -10,7 +10,7 @@
 ![Crates.io Size](https://img.shields.io/crates/size/tomlfuse?color=%23C27AFF&link=https%3A%2F%2Fcrates.io%2Fcrates%2Ftomlfuse)
 ![GitHub last commit](https://img.shields.io/github/last-commit/orgrinrt/tomlfuse?color=%23009689&link=https%3A%2F%2Fgithub.com%2Forgrinrt%2Ftomlfuse)
 
-> Easily bind toml fields into properly typed build-time constants with flexible pattern matching and hierarchies.
+> Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 
 
 </div>
@@ -26,40 +26,6 @@
 - Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
     - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
 
-### Limitations and future work
-
-#### Value types and patterns
-
-- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
-    - This is planned for the future
-        - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
-        - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-          `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-            - A tradeoff between runtime performance and binary size and compilation time, essentially,
-              *if* someone truly needs this
-    - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
-- As of right now, more complex globs are not covered in tests (e.g.
-  `config.*.timeout`), and may or may not work in different cases
-    - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
-    - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
-- Glob syntax for collections, i.e `{a|b|c}`, or other more involved patterns is not supported yet either
-    - This is something that would be preferable to support, but also not a priority right now, since the use case of toml file binding feels to me like something that would not often warrant the use of this kind of complexity
-- Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
-    - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
-        - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
-            - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
-            - If there are multiple stars, then both sides of the alias assignment must match the same amount of stars, otherwise it won't work, which may or may not be obvious and would probably be confusing to the user
-    - In the long run, it'd be great to find a more robust solution, but this would be entirely outside this crate's scope, so it would be an integration of another crate that does this ultimately.
-        - I would be interested to hear suggestions in the meanwhile
-
-#### Extended features
-
-- While constant time binding is the most useful case for something like this, it is not the only one, and I would like to explore the possibility of allowing for dynamic binding as well with some static safety measures such as creating a schematic based on a toml file for type-safe binding, and allowing sane statically typed instances of the toml file to be created and mutated at runtime with minimal, preferably zero dynamic dispatch overhead
-- While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
-    - It will be great to be able to confuse people outside of toml alone
-        - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
-          `ronfuse`...
-            - but I digress
 
 ## Usage
 
@@ -140,18 +106,65 @@ fn main() {
 }
 ```
 
+### Limitations and future work
+
+#### Value types and patterns
+
+- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
+<details>
+<summary>Click to expand notes</summary>
+    - This is planned for the future
+        - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
+        - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
+          `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
+            - A tradeoff between runtime performance and binary size and compilation time, essentially,
+              *if* someone truly needs this
+    - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
+</details>
+- As of right now, more complex globs are not covered in tests (e.g.
+  `config.*.timeout`), and may or may not work in different cases
+<details>
+<summary>Click to expand notes</summary>
+    - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
+    - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
+</details>
+- Glob syntax for collections, i.e `{a|b|c}`, or other more involved patterns is not supported yet either
+<details>
+<summary>Click to expand notes</summary>
+    - This is something that would be preferable to support, but also not a priority right now, since the use case of toml file binding feels to me like something that would not often warrant the use of this kind of complexity
+</details>
+- Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
+<details>
+<summary>Click to expand notes</summary>
+    - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
+        - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
+            - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
+            - If there are multiple stars, then both sides of the alias assignment must match the same amount of stars, otherwise it won't work, which may or may not be obvious and would probably be confusing to the user
+    - In the long run, it'd be great to find a more robust solution, but this would be entirely outside this crate's scope, so it would be an integration of another crate that does this ultimately.
+        - I would be interested to hear suggestions in the meanwhile
+</details> 
+#### Extended features
+
+- While constant time binding is the most useful case for something like this, it is not the only one, and I would like to explore the possibility of allowing for dynamic binding as well with some static safety measures such as creating a schematic based on a toml file for type-safe binding, and allowing sane statically typed instances of the toml file to be created and mutated at runtime with minimal, preferably zero dynamic dispatch overhead
+- While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
+<details>
+<summary>Click to expand notes</summary>
+    - It will be great to be able to confuse people outside of toml alone
+        - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
+          `ronfuse`...
+            - but I digress
+</details>
+
+
 ## Compatibility
 
-This crate requires rust `1.64.0` or later.
-
-For practical reasons, we pin the msrv there to utilize ver `1.64.0` cargo's stabilized
-`workspace-inheritance` feature, but also to remain fairly compatible.
+This crate requires rust `1.73.0` or later. With present dependencies, this is the minimum supported version the dependencies allow. Bumping msrv is considered a breaking change and will be done in a minor version.
 
 ### Versioning policy
 
 Minor versions may have breaking changes, which can include bumping msrv.
 
-Patch versions are backwards compatible, so using version specifiers such as `~x.y` or `^x.y.0` is safe.
+Patch versions are backwards compatible.
 
 ## Support
 
