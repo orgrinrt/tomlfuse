@@ -1,0 +1,51 @@
+[section]
+key = "value"
+number = 42
+array = ["item1", "item2", "item3"]
+
+# this is a one-line comment above a module
+[nested]
+inner.value = true # this is an inline comment after `inner.value` within `[nested]`, so this should show up for `nested.inner.value` or whatever the patterns used
+inner.string = "nested string"
+
+[config]
+debug = false
+settings.timeout = 500
+settings.retries = 3
+logging.level = "info"
+logging.format = "json"
+
+# So 
+# Many
+# Lines
+# In
+# This
+# `deep` module-level comment
+[deep]
+level1.level2.level3.value = true
+level1.level2.other = "sibling"
+level1.alternative.path = "branch"
+standalone = "top-level"
+
+[mixed-types]
+string = "text" # inline comment on `string` field
+# this comment continues from the previous line (inline comment on `string` field)
+# but should appear attached to the `number` field
+number = 42
+float = 3.14
+bool = true
+array = [1, 2, 3]
+
+# kebab-case sections in the toml should properly transform to snake_case, AND also retain the
+# comments they have!
+[special-chars]
+with-dash = "dashed" # the same applies to inline comments in kebab-case fields, such as this one (`with-dash`)
+with_underscore = "underscore"
+"quoted".key = "quoted"
+
+[duplicates]
+key = "top"
+nested.key = "middle"
+nested.deeper.key = "bottom"
+first = 1
+second = 2
