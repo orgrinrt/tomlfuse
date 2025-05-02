@@ -21,4 +21,3 @@ jobs:
       force_tests: false
       force_deploy: false
       auto_bump: true
-#      test_feature_sets: "no_std"
