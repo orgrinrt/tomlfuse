@@ -112,6 +112,7 @@ fn main() {
 - Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
 <details>
 <summary>*Click to expand notes*</summary>
+
     - This is planned for the future
         - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
         - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
@@ -125,6 +126,7 @@ fn main() {
   `config.*.timeout`), and may or may not work in different cases
 <details>
 <summary>*Click to expand notes*</summary>
+
     - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
     - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
 </details>
@@ -132,12 +134,14 @@ fn main() {
 - Glob syntax for collections, i.e `{a|b|c}`, or other more involved patterns is not supported yet either
 <details>
 <summary>*Click to expand notes*</summary>
+
     - This is something that would be preferable to support, but also not a priority right now, since the use case of toml file binding feels to me like something that would not often warrant the use of this kind of complexity
 </details>
 
 - Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
 <details>
 <summary>*Click to expand notes*</summary>
+
     - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
         - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
             - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
@@ -152,6 +156,7 @@ fn main() {
 - While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
 <details>
 <summary>*Click to expand notes*</summary>
+
     - It will be great to be able to confuse people outside of toml alone
         - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
           `ronfuse`...
