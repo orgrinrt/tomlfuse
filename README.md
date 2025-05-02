@@ -46,12 +46,12 @@ file! {
     // bringing in and mixing multiple sections of a toml file that could have same named fields.
     // note that aliases are intended for singular values (including tables though!)
     // so they should not contain glob patterns.
-    alias timeout = config.settings.timeout
+    alias timeout = config.params.timeout
 }
 
 fn main() {
-    println!("Debug mode: {}", settings::config::DEBUG);
-    println!("Timeout: {}", shortcuts::TIMEOUT);
+    println!("Debug mode: {}", settings::DEBUG); // from toml's `config.debug`
+    println!("Timeout: {}", shortcuts::TIMEOUT); // from toml's `config.params.timeout`
 }
 ```
 
@@ -71,7 +71,7 @@ package! {
 }
 // the main reason this variant (and the workspace one too) of the macro exist is for convenience,
 // since one common use case is binding metadata from the package/workspace into the codebase.
-// not having to resolve or input the paths explicitly reduces the friction of using this crate
+// not having to resolve and/or input the paths explicitly reduces the friction of using this crate
 // and also decreases the vectors for human error
 
 fn main() {
@@ -100,9 +100,9 @@ workspace! {
 }
 fn main() {
     println!("Workspace members: {:?}", workspace::MEMBERS);
-    // while members array in the toml contains `foo`...
+    // while members array in the toml *does* contain a field `foo`...
     println!("Workspace's foo member: {:?}", workspace::FOO);
-    // ...this will not compile due to exclusion!
+    // ...this will *not* compile due to the exclusion!
 }
 ```
 
@@ -112,7 +112,7 @@ fn main() {
 
 - Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
 <details>
-<summary>Click to expand notes</summary>
+<summary>*Click to expand notes*</summary>
     - This is planned for the future
         - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
         - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
@@ -121,21 +121,24 @@ fn main() {
               *if* someone truly needs this
     - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
 </details>
+
 - As of right now, more complex globs are not covered in tests (e.g.
   `config.*.timeout`), and may or may not work in different cases
 <details>
-<summary>Click to expand notes</summary>
+<summary>*Click to expand notes*</summary>
     - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
     - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
 </details>
+
 - Glob syntax for collections, i.e `{a|b|c}`, or other more involved patterns is not supported yet either
 <details>
-<summary>Click to expand notes</summary>
+<summary>*Click to expand notes*</summary>
     - This is something that would be preferable to support, but also not a priority right now, since the use case of toml file binding feels to me like something that would not often warrant the use of this kind of complexity
 </details>
+
 - Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
 <details>
-<summary>Click to expand notes</summary>
+<summary>*Click to expand notes*</summary>
     - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
         - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
             - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
@@ -143,12 +146,13 @@ fn main() {
     - In the long run, it'd be great to find a more robust solution, but this would be entirely outside this crate's scope, so it would be an integration of another crate that does this ultimately.
         - I would be interested to hear suggestions in the meanwhile
 </details> 
+
 #### Extended features
 
 - While constant time binding is the most useful case for something like this, it is not the only one, and I would like to explore the possibility of allowing for dynamic binding as well with some static safety measures such as creating a schematic based on a toml file for type-safe binding, and allowing sane statically typed instances of the toml file to be created and mutated at runtime with minimal, preferably zero dynamic dispatch overhead
 - While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
 <details>
-<summary>Click to expand notes</summary>
+<summary>*Click to expand notes*</summary>
     - It will be great to be able to confuse people outside of toml alone
         - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
           `ronfuse`...
