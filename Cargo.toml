@@ -20,6 +20,7 @@ tempfile = "3.19.1"
 
 [lib]
 proc-macro = true
+doctest = false # unfortunately not practical to setup the doc examples with actual toml files to load or even as inlined literals for the content
 
 [dependencies]
 toml = { version = "^0.8" }

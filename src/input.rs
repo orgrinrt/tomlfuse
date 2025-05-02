@@ -9,8 +9,19 @@ use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Result as SynResult};
 
+/// Parsed representation of the input to `tomlfuse` macros.
+///
+/// Stores the macro parameters:
+/// 1. Path to the TOML file (optional for some convenience macros)
+/// 2. Module source configurations (patterns, sections, aliases)
+///
+/// This structure is created during macro parsing and used to drive
+/// the code generation process.
 pub struct MacroInput {
+    /// Optional path to the TOML file
     pub toml_path: Option<String>,
+    /// Collection of module configurations from the macro input
+    /// Each represents a separate module to generate
     pub root_module_sources: Vec<RootModuleSource>,
 }
 

@@ -10,11 +10,11 @@ use crate::pattern::Pattern;
 use crate::utils;
 use globset::{Glob, GlobSetBuilder};
 use proc_macro2::Ident;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{quote, ToTokens};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fs};
-use syn::__private::TokenStream2;
 use syn::parse::{Parse, ParseStream};
 use syn::{token, Result as SynResult, Token};
 use toml::Value;
@@ -23,17 +23,33 @@ mod kw {
     syn::custom_keyword!(alias);
 }
 
+/// Source configuration for a root module used in macro input.
+///
+/// Represents the parsed pattern declarations from macro input that define
+/// which TOML entries should be included in the generated code.
+///
 #[derive(Clone, Debug)]
 pub struct RootModuleSource {
+    /// Name of the module to be generated
     pub name: Ident,
+    /// Patterns for fields to include in the generated code
     pub inclusion_pats: Vec<Pattern>,
+    /// Patterns for fields to exclude from the generated code
     pub exclusion_pats: Vec<Pattern>,
+    /// Map of pattern aliases where key is the alias and value is the original pattern
     pub aliases: HashMap<Pattern, Pattern>,
+    /// Comments extracted from the TOML file, keyed by field path
     pub comments: HashMap<String, String>,
 }
 
+/// Root module that generates code from TOML data.
+///
+/// Combines the configuration from `RootModuleSource` with parsed TOML data
+/// to generate a Rust module with constants reflecting the TOML structure.
+///
 #[derive(Clone, Debug)]
 pub struct RootModule<'a> {
+    /// Source configuration from macro input
     pub source: RootModuleSource,
     pub toml: Value,
     pub fields: TomlFields<'a>,
@@ -41,6 +57,14 @@ pub struct RootModule<'a> {
 
 impl<'a> RootModule<'a> {
     pub fn new(mut source: RootModuleSource, toml_path: &'a str) -> Self {
+        // attempt to read the TOML file from:
+        // 1. direct path
+        // 2. relative to workspace root
+        // 3. relative to CARGO_MANIFEST_DIR
+        //
+        // this allows for flexibility in specifying the TOML path while
+        // still providing reasonable defaults without requiring absolute paths
+        // for common scenarios like referencing Cargo.toml
         let toml_raw = fs::read_to_string(toml_path).unwrap_or(
             fs::read_to_string(utils::find_workspace_root().join(toml_path)).unwrap_or(
                 fs::read_to_string(
@@ -48,9 +72,9 @@ impl<'a> RootModule<'a> {
                         env::var("CARGO_MANIFEST_DIR")
                             .expect("Expected CARGO_MANIFEST_DIR to be in env"),
                     )
-                        .join(toml_path),
+                    .join(toml_path),
                 )
-                    .unwrap_or_default(),
+                .unwrap_or_default(),
             ),
         );
         let toml: Value = toml_raw
@@ -60,6 +84,7 @@ impl<'a> RootModule<'a> {
         RootModule::from(source).with_toml(toml).build()
     }
 
+    /// Sets the parsed TOML value for this module.
     pub fn with_toml(self, toml: Value) -> Self {
         RootModule {
             toml,
@@ -67,6 +92,11 @@ impl<'a> RootModule<'a> {
         }
     }
 
+    /// Builds the final module by applying patterns and extracting fields.
+    ///
+    /// This method:
+    /// 1. Converts patterns to glob matchers
+    /// 2. Extracts fields matching the patterns from the TOML data
     pub fn build(self) -> Self {
         let mut inclusions = GlobSetBuilder::new();
         let mut exclusions = GlobSetBuilder::new();

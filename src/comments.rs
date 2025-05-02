@@ -16,28 +16,26 @@ enum StringState {
     MultiDoubleQuote,
 }
 
-/// Extracts comments from toml input.
+/// Extracts comments from TOML content and associates them with keys/sections.
 ///
-/// This function parses the given toml content and associates comments with keys and section headers.
-/// Both preceding (above) and inline (same-line) comments are captured. Multi-line preceding comments
-/// are joined with `\n`, and inline comments are appended. Orphaned comments not followed by a key or
-/// section header are ignored. Comment groups reset on blank lines. Empty comment lines (just `#`) 
-/// are preserved as additional newlines in the output.
+/// Comment handling:
+/// - Associates preceding comments (above key/section)
+/// - Captures inline comments (same line)
+/// - Joins multi-line comments with newlines
+/// - Preserves empty comment lines as blank lines
+/// - Resets comment accumulation on blank lines
+/// - Ignores orphaned comments with no associated key
 ///
 /// # Parameters
-///
 /// - `content`: toml document as a string slice.
 ///
 /// # Returns
-///
 /// A `HashMap` where each entry maps the full dotted path of a field or section
 /// (e.g. `section.subsection.key`) to its concatenated comment text.
 ///
-/// # Examples
-///
 /// ```rust
 /// # use std::collections::HashMap;
-/// # fn extract_comments(input: &'static str) -> HashMap<String, String> { 
+/// # fn extract_comments(input: &'static str) -> HashMap<String, String> {
 /// #    // dummy impl because proc-macro crate can't export this function
 /// #    let mut out = HashMap::new();
 /// #    out.insert("package.version".to_string(), "header\ninline comment".to_string());
@@ -57,7 +55,9 @@ enum StringState {
 #[cold]
 pub fn extract_comments(content: &str) -> HashMap<String, String> {
     let mut comments = HashMap::new();
-    if content.is_empty() { return comments; }
+    if content.is_empty() {
+        return comments;
+    }
 
     let lines: Vec<&str> = content.lines().collect();
 
@@ -77,10 +77,10 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
             match string_state {
                 StringState::MultiSingleQuote if trimmed.contains("'''") => {
                     string_state = StringState::None;
-                }
+                },
                 StringState::MultiDoubleQuote if trimmed.contains("\"\"\"") => {
                     string_state = StringState::None;
-                }
+                },
                 _ => continue, // still in string, skip line
             }
             continue;
@@ -167,7 +167,6 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
                 current_comments.clear();
             }
         }
-
         // other line types - reset state
         else if !trimmed.starts_with('#') {
             current_comments.clear();
@@ -183,12 +182,13 @@ fn extract_inline_comment(line: &str, after_pos: usize) -> Option<String> {
     if let Some(comment_pos) = line.find('#') {
         if comment_pos > after_pos {
             let comment = line[comment_pos + 1..].trim();
-            if !comment.is_empty() { return Some(comment.to_string()); }
+            if !comment.is_empty() {
+                return Some(comment.to_string());
+            }
         }
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -218,10 +218,7 @@ version = "0.1.0" # inline comment
 key = true
 "#;
         let comments = extract_comments(toml);
-        assert_eq!(
-            comments.get("key"),
-            Some(&"second comment".to_string())
-        );
+        assert_eq!(comments.get("key"), Some(&"second comment".to_string()));
     }
 
     #[test]
@@ -235,10 +232,7 @@ line2
 other = 123
 "#;
         let comments = extract_comments(toml);
-        assert_eq!(
-            comments.get("other"),
-            Some(&"real comment".to_string())
-        );
+        assert_eq!(comments.get("other"), Some(&"real comment".to_string()));
         assert!(!comments.contains_key("value"));
     }
 
@@ -262,10 +256,7 @@ item.subkey = "x"
 key = 10 # just inline
 "#;
         let comments = extract_comments(toml);
-        assert_eq!(
-            comments.get("key"),
-            Some(&"just inline".to_string())
-        );
+        assert_eq!(comments.get("key"), Some(&"just inline".to_string()));
     }
 
     #[test]
@@ -301,8 +292,10 @@ key = 10 # just inline
         let comments = extract_comments(toml);
         // trailing comment should be discarded
         assert_eq!(comments.len(), 1);
-        assert_eq!(comments.get("section"),
-                   Some(&"orphaned comment at top".to_string()));
+        assert_eq!(
+            comments.get("section"),
+            Some(&"orphaned comment at top".to_string())
+        );
     }
 
     #[test]
@@ -330,10 +323,7 @@ key = 10 # just inline
     key = true
     "#;
         let comments = extract_comments(toml);
-        assert_eq!(
-            comments.get("key"),
-            Some(&"real comment".to_string())
-        );
+        assert_eq!(comments.get("key"), Some(&"real comment".to_string()));
     }
 
     #[test]
@@ -353,7 +343,10 @@ key = 10 # just inline
             Some(&"first inline comment".to_string())
         );
         // orphaned multi-line comment is associated with next_key, not merged with previous inline
-        assert_eq!(comments.get("next_key"), Some(&"this is an orphaned comment\nthat spans multiple lines".to_string()));
+        assert_eq!(
+            comments.get("next_key"),
+            Some(&"this is an orphaned comment\nthat spans multiple lines".to_string())
+        );
     }
 
     #[test]

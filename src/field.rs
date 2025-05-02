@@ -17,15 +17,29 @@ use toml::Value;
 
 pub const ROOT: &str = "";
 
+/// Represents a single field extracted from a TOML document.
+///
+/// Maps a TOML node to its path, value and metadata required for code generation.
+/// Fields can represent either leaf values (constants) or tables (modules).
+/// Tracks both path and relationship information for hierarchical organization.
+///
 #[derive(Debug, Clone, PartialEq)]
 pub struct TomlField<'a> {
+    /// Name of the field, used as identifier in generated code
     pub name: String,
+    /// Reference to the actual TOML value
     pub value: &'a Value,
+    /// Full dot-separated path to this field in normalized form
     pub path: String,
+    /// Path relative to the matching pattern, for hierarchical organization
     pub relative_path: Option<String>, // path relative to matched pattern
+    /// Original path in the TOML file before normalization (preserves case)
     pub toml_path: Option<String>, // path in the actual toml file
+    /// Optional alias for the field, if specified in the macro
     pub alias: Option<String>,
+    /// Index of parent field in the fields collection
     pub parent: Option<usize>,
+    /// Comment associated with this field from the TOML file
     pub comment: Option<String>,
 }
 
@@ -114,6 +128,12 @@ impl<'a> TomlField<'a> {
         self
     }
 
+    /// Determines if this field represents a TOML table.
+    ///
+    /// # Returns
+    /// `true` if the field's value is a TOML table, `false` otherwise.
+    ///
+    /// This helps guide the module generation process during code generation.
     pub fn is_table(&self) -> bool {
         matches!(self.value, Value::Table(_))
     }
@@ -143,6 +163,14 @@ impl<'a> TomlField<'a> {
     }
 }
 
+/// Container for pattern matchers used to filter TOML fields.
+///
+/// Filtering logic:
+/// - Inclusion patterns specify which fields to include
+/// - Exclusion patterns override inclusions for specific fields
+///
+/// The literals are included for improved heuristics downstream.
+///
 #[derive(Clone, Debug, Default)]
 pub struct Patterns {
     pub inclusions: Option<GlobSet>,
@@ -173,7 +201,18 @@ impl Patterns {
     }
 }
 
+/// Collection of TOML fields with pattern matching capabilities.
+///
+/// Central structure responsible for:
+/// 1. Extracting fields from TOML data matching specified patterns
+/// 2. Associating comments with their respective fields
+/// 3. Resolving both absolute and relative paths
+/// 4. Managing parent-child relationships between fields
+/// 5. Generating the Rust module structure
+///
+/// Fields can be accessed by index, name, or parent-child relationships.
 #[derive(Clone, Debug)]
+// TODO: should probably rethink the name to better signal what it is. `ModuleImpl` maybe?
 pub struct TomlFields<'a> {
     pub root_value: Option<&'a Value>,
     pub fields: Vec<TomlField<'a>>,
@@ -191,6 +230,14 @@ impl<'a> TomlFields<'a> {
             comments: None,
         }
     }
+
+    /// Builds the fields collection by extracting matched paths from the TOML document.
+    ///
+    /// Processing steps:
+    /// 1. Extracts all fields matching configured patterns and pre-processes them
+    /// 2. Resolves relative paths for hierarchical organization
+    /// 3. Associates comments with the corresponding fields
+    /// 4. Applies aliases to fields where specified
     pub fn build(mut self) -> Self {
         // println!("Building TomlFields...");
         self.extract_matched_paths_from_value(
@@ -261,10 +308,7 @@ impl<'a> TomlFields<'a> {
         self.patterns.add_literal(pattern);
         self
     }
-    pub fn with_comments(
-        mut self,
-        comments: HashMap<String, String>,
-    ) -> Self {
+    pub fn with_comments(mut self, comments: HashMap<String, String>) -> Self {
         self.comments = Some(comments);
         self
     }
@@ -304,6 +348,13 @@ impl<'a> TomlFields<'a> {
         best_match
     }
 
+    /// Gets direct child fields based on the original TOML structure.
+    ///
+    /// # Parameters
+    /// - `this_idx`: Index of the parent field
+    ///
+    /// # Returns
+    /// A new `TomlFields` containing only direct children of the specified field
     pub fn get_toml_children_of(&self, this_idx: usize) -> TomlFields<'a> {
         TomlFields::<'a> {
             fields: self
@@ -326,6 +377,18 @@ impl<'a> TomlFields<'a> {
         let this_field = self.get_field(this_idx).expect("Expected a valid field");
         self.get_relative_parent_of_field(this_field)
     }
+
+    /// Finds the relative parent field based on effective module paths.
+    ///
+    /// Uses pattern-based heuristics to determine parent-child relationships in
+    /// the generated module structure, which will in most cases differ from the original TOML hierarchy.
+    ///
+    /// # Parameters
+    /// - `this_field`: Field to find the relative parent for
+    ///
+    /// # Returns
+    /// Reference to the module parent field based on effective path
+    /// (NOTE: not necessarily the same as the TOML document parent)
     pub fn get_relative_parent_of_field(
         &'a self,
         this_field: &'a TomlField<'a>,
@@ -346,6 +409,15 @@ impl<'a> TomlFields<'a> {
         // println!("    >> Found relative parent for {}; field: {}", this_field.name, relative_parent_field.name);
         relative_parent_field
     }
+
+    /// Gets children fields in the module hierarchy (not TOML hierarchy).
+    ///
+    /// Different from `get_toml_children_of` as this returns fields that will appear
+    /// in the generated module rather than following the original TOML structure.
+    /// # Parameters
+    /// - `this_idx`: Index of the parent field
+    ///
+    /// # Returns
     pub fn get_relative_children_of(&'a self, this_idx: usize) -> TomlFields<'a> {
         let this_field = self.get_field(this_idx).expect("Expected a valid field");
         let children = self
@@ -372,6 +444,13 @@ impl<'a> TomlFields<'a> {
         self.fields.get(idx)
     }
 
+    /// Finds a field by its name.
+    ///
+    /// # Parameters
+    /// - `name`: Name of the field to find
+    ///
+    /// # Returns
+    /// Reference to the found field, or None if no field with that name exists
     pub fn get_by_name(&self, name: &str) -> Option<&TomlField<'a>> {
         self.fields.iter().find(|f| f.name == name)
     }
@@ -380,6 +459,18 @@ impl<'a> TomlFields<'a> {
         self.fields.iter().position(|f| f == field)
     }
 
+    /// Extracts fields from a TOML value that match configured patterns.
+    ///
+    /// Recursively walks the TOML document structure, filtering fields based on:
+    /// - Inclusion patterns
+    /// - Exclusion patterns
+    /// - Aliases
+    ///
+    /// # Parameters
+    /// - `value`: TOML value to extract fields from
+    /// - `_path`: Current path in the TOML hierarchy
+    /// - `parent_idx`: Index of the parent field (for recursion)
+    ///
     pub fn extract_matched_paths_from_value(
         &mut self,
         value: &'a Value,
@@ -403,13 +494,7 @@ impl<'a> TomlFields<'a> {
         });
         let alias_name = alias
             .as_ref()
-            .and_then(|(alias, _)| {
-                if alias == &"*" {
-                    None
-                } else {
-                    Some(alias)
-                }
-            })
+            .and_then(|(alias, _)| if alias == &"*" { None } else { Some(alias) })
             .map(|alias| alias.to_string());
         let is_alias = alias.is_some();
         let aliased_path = if let Some((alias, _)) = alias {
@@ -439,8 +524,8 @@ impl<'a> TomlFields<'a> {
                 value,
                 Some(parent_idx),
             )
-                .with_alias(alias_name.as_deref().unwrap_or(ROOT))
-                .with_toml_path(&orig_path);
+            .with_alias(alias_name.as_deref().unwrap_or(ROOT))
+            .with_toml_path(&orig_path);
 
             (field, self.fields.len()) // idx where this field will be placed
         };
@@ -455,24 +540,24 @@ impl<'a> TomlFields<'a> {
                         if path.is_empty() { key.clone() } else { format!("{}.{}", path, key) };
                     self.extract_matched_paths_from_value(val, &new_path, field_idx);
                 }
-            }
+            },
             _ => {
                 // NOTE: this is good for some additional logic we might want to add to actual values (<=> consts)
                 let mut skip = !((path == ROOT)
                     || ((self.patterns.inclusions.is_none()
-                    || self
-                    .patterns
-                    .inclusions
-                    .as_ref()
-                    .expect("Expected inclusion globs")
-                    .is_match(&path))
-                    && (self.patterns.exclusions.is_none()
-                    || !self
-                    .patterns
-                    .exclusions
-                    .as_ref()
-                    .expect("Expected exclusion globs")
-                    .is_match(&path))));
+                        || self
+                            .patterns
+                            .inclusions
+                            .as_ref()
+                            .expect("Expected inclusion globs")
+                            .is_match(&path))
+                        && (self.patterns.exclusions.is_none()
+                            || !self
+                                .patterns
+                                .exclusions
+                                .as_ref()
+                                .expect("Expected exclusion globs")
+                                .is_match(&path))));
                 if is_alias && skip {
                     field.path = field.name.clone();
                     skip = false;
@@ -487,7 +572,7 @@ impl<'a> TomlFields<'a> {
                     // println!("    >> Skipping field: {}", path);
                     return;
                 }
-            }
+            },
         }
     }
 }
@@ -518,10 +603,19 @@ impl<'a> ToTokens for TomlFields<'a> {
 }
 
 impl<'a> TomlFields<'a> {
+    /// Generates modules from the fields collection.
+    ///
+    /// Starts the code generation process from the root field.
     fn generate_modules(&self, tokens: &mut TokenStream2) {
         // start from root
         self.generate_module(0, tokens);
     }
+
+    /// Generates a single module from a field and its children.
+    ///
+    /// Recursively generates modules for table fields and constants for value fields.
+    /// The structure of the generated code reflects the effective module paths
+    /// derived from the TOML structure and the applied patterns.
 
     fn generate_module(&self, idx: usize, tokens: &mut TokenStream2) {
         // get module name (last component of path)
@@ -551,14 +645,11 @@ impl<'a> TomlFields<'a> {
             .filter(|f| !f.is_table())
         {
             let (ty, val) = convert_value_to_tokens(field.value);
-            let const_name = format_ident!(
-                "{}",
-                to_valid_ident(&field.name).to_uppercase()
-            );
+            let const_name = format_ident!("{}", to_valid_ident(&field.name).to_uppercase());
             let comment = get_doc_comment(field);
-            mod_tokens.extend(quote! { 
+            mod_tokens.extend(quote! {
                 #comment
-                pub const #const_name: #ty = #val; 
+                pub const #const_name: #ty = #val;
             });
         }
 
@@ -577,7 +668,10 @@ impl<'a> TomlFields<'a> {
 
         if !mod_tokens.is_empty() {
             tokens.extend(if mod_ident.is_some() {
-                let comment = get_doc_comment(self.get_field(idx).expect("Expected this to be a valid field"));
+                let comment = get_doc_comment(
+                    self.get_field(idx)
+                        .expect("Expected this to be a valid field"),
+                );
                 let _mod_ident = mod_ident.unwrap();
                 quote! {
                     #comment

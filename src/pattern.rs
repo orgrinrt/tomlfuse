@@ -13,6 +13,17 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{Result as SynResult, Token};
 
+/// Represents a pattern for matching TOML paths.
+///
+/// Patterns use dot-separated segments with special syntax:
+/// - Regular identifiers match exact paths
+/// - `*` matches any single segment
+/// - `**` matches any number of segments (recursive)
+/// - `!` at start negates the pattern (for exclusion)
+/// - Braces and brackets for grouping (future)
+///
+///
+/// For example: `section.*` matches all direct children of "section".
 pub struct Pattern {
     segments: Punctuated<PatternSegment, Token![.]>,
     spans: Vec<proc_macro2::Span>,
@@ -77,6 +88,16 @@ impl Debug for Pattern {
     }
 }
 
+/// Represents a single segment in a pattern.
+///
+/// Segment types:
+/// - `Ident`: Normal identifiers for exact matching (e.g., "section", "key")
+/// - `Star`: Single wildcard (`*`) matching any one segment
+/// - `DoubleStar`: Recursive wildcard (`**`) matching any number of segments
+/// - `Negation`: Exclusion prefix (`!`) for pattern negation
+/// - `Braces`, `Brackets`: Grouping constructs (future)
+///
+/// - Various grouping constructs like braces or brackets
 #[derive(Clone, Eq, Hash, PartialEq)]
 enum PatternSegment {
     Ident(Ident),
@@ -187,14 +208,14 @@ impl ToTokens for PatternSegment {
             PatternSegment::Braces(segments) => {
                 let segments = segments.iter().map(|seg| seg.to_token_stream());
                 quote!({ #(#segments)* }).to_tokens(tokens)
-            }
+            },
             PatternSegment::Brackets(segments) => {
                 let segments = segments.iter().map(|seg| seg.to_token_stream());
                 quote!([ #(#segments)* ]).to_tokens(tokens)
-            }
+            },
             _ => {
                 unimplemented!()
-            }
+            },
         }
     }
 }
@@ -209,14 +230,14 @@ impl Display for PatternSegment {
             PatternSegment::Braces(segments) => {
                 let segments: Vec<_> = segments.iter().map(|seg| seg.to_string()).collect();
                 write!(f, "{{{}}}", segments.join(", "))
-            }
+            },
             PatternSegment::Brackets(segments) => {
                 let segments: Vec<_> = segments.iter().map(|seg| seg.to_string()).collect();
                 write!(f, "[{}]", segments.join(", "))
-            }
+            },
             _ => {
                 unimplemented!()
-            }
+            },
         }
     }
 }

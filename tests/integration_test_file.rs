@@ -48,7 +48,7 @@ file! {
     [original]
     config.*
     nested.inner.*
-    
+
     [all]
     *
 }

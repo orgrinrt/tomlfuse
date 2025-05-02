@@ -29,7 +29,7 @@ pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
             // TODO: proper DateTime support via chrono or similar
             let dt_str = dt.to_string();
             (quote! { &'static str }, quote! { #dt_str })
-        }
+        },
         Value::Array(arr) => {
             if arr.is_empty() {
                 (quote! { &'static [&'static str] }, quote! { &[] })
@@ -37,12 +37,17 @@ pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
                 // single-step recurse to get type and value for the first element
                 let (elem_ty, _) = convert_value_to_tokens(&arr[0]);
                 // check all elements are of the same variant as the first (should be the case for most use cases)
-                let same_type = arr.iter().all(|v| std::mem::discriminant(v) == std::mem::discriminant(&arr[0]));
+                let same_type = arr
+                    .iter()
+                    .all(|v| std::mem::discriminant(v) == std::mem::discriminant(&arr[0]));
                 if same_type {
-                    let elems: Vec<_> = arr.iter().map(|v| {
-                        let (_, val) = convert_value_to_tokens(v);
-                        val
-                    }).collect();
+                    let elems: Vec<_> = arr
+                        .iter()
+                        .map(|v| {
+                            let (_, val) = convert_value_to_tokens(v);
+                            val
+                        })
+                        .collect();
                     (quote! { &'static [#elem_ty] }, quote! { &[#(#elems),*] })
                 } else {
                     // fallback for mixed types
@@ -50,19 +55,18 @@ pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
                     (quote! { &'static str }, quote! { #array_str })
                 }
             }
-        }
+        },
         _ => {
             // fallback for unsupported types, are there any we should support?
             let val_str = format!("{}", value);
             (quote! { &'static str }, quote! { #val_str })
-        }
+        },
     }
 }
 
-/// Renders any toml `Value` into a string literal token.
+/// Converts a TOML `Value` to a string token representation.
 ///
-/// String values pass through directly, while other types are
-/// converted to their string representation.
+/// String values are kept as-is, other types are converted to string form.
 #[inline]
 pub fn value_to_string_token(value: &Value) -> TokenStream2 {
     match value {
@@ -78,18 +82,17 @@ pub fn value_to_string_token(value: &Value) -> TokenStream2 {
                 // no processing required
                 quote! { #s }
             }
-        }
+        },
     }
 }
 
 /// Wraps a field's comment into a `#[doc = "..."]` attribute token.
 ///
-/// Properly escapes backticks and single quotes in comments.
+/// Preserves the field's original comment formatting if available.
+///
 /// Returns empty tokens if the field has no comment.
 #[inline]
-pub fn get_doc_comment(
-    field: &TomlField,
-) -> TokenStream2 {
+pub fn get_doc_comment(field: &TomlField) -> TokenStream2 {
     // println!(" >> Figuring out the comment for field: {}", field.name);
     let comment_maybe = field.comment.clone();
     // let comment = comment_maybe.unwrap_or_default().replace("\n", "\n\n").replace("\\\n", "\n\n"); // proper newlines
@@ -107,7 +110,11 @@ pub fn get_doc_comment(
 
 /// Finds the workspace root by traversing upward from `CARGO_MANIFEST_DIR`.
 ///
-/// Returns the first directory containing a Cargo.toml with a `[workspace]` table.
+/// Searches parent directories until it finds one with a Cargo.toml file
+/// that contains a `[workspace]` table. This allows finding the workspace
+/// root from any crate within the workspace.
+///
+/// # Returns
 /// Falls back to the original manifest directory if no workspace root is found.
 #[cold]
 pub fn find_workspace_root() -> PathBuf {
@@ -126,9 +133,15 @@ pub fn find_workspace_root() -> PathBuf {
     path
 }
 
-/// Checks if the given path points to a Cargo.toml file containing a `[workspace]` table.
+/// Determines if a path contains a workspace Cargo.toml file.
 ///
-/// Returns `true` if the path exists, can be read, parsed as toml, and has a workspace table.
+/// Checks if the file exists, can be read as TOML, and contains
+/// a `[workspace]` table.
+/// # Parameters
+/// - `path`: Path to a potential Cargo.toml file
+///
+/// # Returns
+/// `true` if the path exists, can be read, parsed as TOML, and has a workspace table.
 #[cold]
 pub fn is_workspace_root(path: &Path) -> bool {
     if let Ok(content) = fs::read_to_string(path) {
@@ -139,11 +152,16 @@ pub fn is_workspace_root(path: &Path) -> bool {
     false
 }
 
-/// Normalizes a raw toml key into a valid Rust identifier (but still as String).
+/// Converts a TOML key into a valid Rust identifier string.
 ///
-/// - Strips surrounding quotes if present
-/// - Replaces dashes with underscores
-/// - Returns `ROOT` constant for empty input
+/// Transformations applied:
+///
+/// 1. Strips surrounding quotes if present
+/// 2. Replaces dashes with underscores (kebab-case to snake_case)
+/// 3. Returns `ROOT` constant for empty input
+///
+/// # Parameters
+/// - `input`: Raw TOML key to normalize
 #[inline]
 pub fn to_valid_ident(input: &str) -> String {
     // handle potentially somehow still quoted keys by removing quotes
@@ -155,7 +173,10 @@ pub fn to_valid_ident(input: &str) -> String {
     kebab_to_snake(i)
 }
 
-/// Replaces all dashes in a string with underscores.
+/// Converts kebab-case to snake_case by replacing all dashes with underscores.
+///
+/// # Parameters
+/// - `input`: String potentially containing dashes
 ///
 /// Used for converting kebab-case to snake_case in toml keys.
 #[inline]
@@ -163,15 +184,18 @@ pub fn kebab_to_snake(input: &str) -> String {
     // TODO: more sophisticated conversion and covering edge cases that I assume have to exist
     input.replace('-', "_")
 }
-/// Replaces all underscores in a string with dashes.
+
+/// Converts snake_case to kebab-case by replacing all underscores with dashes.
 ///
-/// Used for converting snake_case to kebab-case in toml keys.
+/// # Parameters
+/// - `input`: String potentially containing underscores
+///
+/// Used for converting snake_case to kebab-case in TOML keys.
 #[inline]
 pub fn snake_to_kebab(input: &str) -> String {
     input.replace('_', "-")
 }
-// TODO: unit test for this, but in practice unless we expand or add to this, it should do what it says on the tin
-
+// TODO: unit test for `snake_to_kebab`, but in practice unless we expand or add to this, it should do what it says on the tin
 
 #[cfg(test)]
 mod tests {
@@ -247,10 +271,7 @@ mod tests {
 
     #[test]
     fn test_homogeneous_array() {
-        let strings = Value::Array(vec![
-            Value::String("a".into()),
-            Value::String("b".into()),
-        ]);
+        let strings = Value::Array(vec![Value::String("a".into()), Value::String("b".into())]);
         let (ty, val) = convert_value_to_tokens(&strings);
         assert_eq!(ty.to_string(), "& 'static [& 'static str]");
         assert!(val.to_string().contains("\"a\""));
@@ -267,30 +288,37 @@ mod tests {
 
     #[test]
     fn test_mixed_array_fallback() {
-        let mixed = Value::Array(vec![
-            Value::String("a".into()),
-            Value::Integer(1),
-        ]);
+        let mixed = Value::Array(vec![Value::String("a".into()), Value::Integer(1)]);
         let (ty, val) = convert_value_to_tokens(&mixed);
         assert_eq!(ty.to_string(), "& 'static str");
         // debug representation of mixed array
         // NOTE: when a str value converts to a token, it gets escaped on display
         //       unsure whether or not this should be thus, or we should make it more sensible?
         let pat = format!("[String(\\\"{}\\\"), Integer({})]", "a", 1);
-        assert!(val.to_string().contains(&pat),
-                "{}, should contain: {}", val.to_string(), pat);
+        assert!(
+            val.to_string().contains(&pat),
+            "{}, should contain: {}",
+            val.to_string(),
+            pat
+        );
     }
 
     #[test]
     fn test_value_to_string_token() {
         let str_val = Value::String("hello".into());
-        assert_eq!(value_to_string_token(&str_val).to_string(), escaped("hello"));
+        assert_eq!(
+            value_to_string_token(&str_val).to_string(),
+            escaped("hello")
+        );
 
         let int_val = Value::Integer(42);
         // non-string values get quoted in string token output
         assert_eq!(value_to_string_token(&int_val).to_string(), escaped("42"));
         let bool_val = Value::Boolean(true);
-        assert_eq!(value_to_string_token(&bool_val).to_string(), escaped("true"));
+        assert_eq!(
+            value_to_string_token(&bool_val).to_string(),
+            escaped("true")
+        );
     }
 
     #[test]
@@ -329,10 +357,7 @@ mod tests {
         )?;
 
         // create project Cargo.toml
-        fs::write(
-            project.join("Cargo.toml"),
-            "[package]\nname = \"test\"",
-        )?;
+        fs::write(project.join("Cargo.toml"), "[package]\nname = \"test\"")?;
 
         // test with original manifest dir set to project
         let orig_dir = env::var("CARGO_MANIFEST_DIR").ok();

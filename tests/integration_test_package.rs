@@ -22,7 +22,7 @@ package! {
 
     [defaults]
     package.metadata.defaults.*
-    
+
     [all]
     *
 }
