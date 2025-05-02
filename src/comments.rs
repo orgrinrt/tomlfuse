@@ -65,7 +65,7 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
     let mut current_comments = Vec::new();
     let mut current_path = Vec::new();
 
-    for (i, line) in lines.iter().enumerate() {
+    for (_i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             current_comments.clear();

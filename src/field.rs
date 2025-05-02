@@ -317,7 +317,7 @@ impl<'a> TomlFields<'a> {
     fn get_relative_path(&self, path: &str) -> Option<String> {
         let mut best_match: Option<String> = None;
         for pat in &self.patterns.literals {
-            if pat.starts_with("!") {
+            if pat.starts_with('!') {
                 continue;
             }
             let pat_segs = pat
@@ -570,7 +570,6 @@ impl<'a> TomlFields<'a> {
                     self.fields.push(field);
                 } else {
                     // println!("    >> Skipping field: {}", path);
-                    return;
                 }
             },
         }

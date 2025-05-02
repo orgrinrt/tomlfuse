@@ -111,7 +111,7 @@ impl<'a> RootModule<'a> {
             exclusions
                 .add(Glob::new(&pattern.to_string()).expect("Expected a valid glob pat string"));
             // println!("Added exclusion pattern: {}", pattern);
-            literals.push(format!("!{}", pattern.to_string()));
+            literals.push(format!("!{}", pattern));
         }
         let fields = TomlFields::from(self.toml.clone())
             .with_inclusion_globs(Some(
