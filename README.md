@@ -12,7 +12,6 @@
 
 > Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 
-
 </div>
 
 ## Features
