@@ -2,13 +2,18 @@
 name = "tomlfuse"
 version = "0.0.1"
 edition = "2021"
+rust-version = "1.73.0"
 description = """
-Easily bind toml fields into properly typed build-time constants with flexible pattern matching and hierarchies.
+Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 """
 authors = ["orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
 license-file = "LICENSE"
 readme = "README.md"
-publish = true
+keywords = ["toml", "build-time", "constant", "proc-macro"]
+categories = ["development-tools", "config"]
+documentation = "https://docs.rs/tomlfuse"
+homepage = "https://github.com/orgrinrt/tomlfuse"
+repository = "https://github.com/orgrinrt/tomlfuse"
 
 [dev-dependencies]
 tempfile = "3.19.1"
