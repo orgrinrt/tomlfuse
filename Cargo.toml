@@ -36,7 +36,6 @@ once_cell = { version = "^1.21", features = ["std"] }
 [package.metadata]
 # this comment should end up in the FOO constant's documentation string
 foo = "bar"
-
 #
 #
 #
