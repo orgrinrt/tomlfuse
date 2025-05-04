@@ -4,7 +4,7 @@ version = "0.0.3"
 edition = "2021"
 rust-version = "1.73.0"
 description = """
-Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
+(Deprecated: Use the `confuse` crate instead) Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 """
 authors = ["orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
 license-file = "LICENSE"
@@ -14,6 +14,9 @@ categories = ["development-tools", "config"]
 documentation = "https://docs.rs/tomlfuse"
 homepage = "https://github.com/orgrinrt/tomlfuse"
 repository = "https://github.com/orgrinrt/tomlfuse"
+
+[badges]
+maintenance = { status = "deprecated" }
 
 [dev-dependencies]
 tempfile = "3.19.1"

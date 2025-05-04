@@ -58,6 +58,7 @@ use utils::*;
 ///
 /// See also: [`package!`], [`file!`]
 #[proc_macro]
+#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn workspace(input: TokenStream) -> TokenStream {
     // find workspace root
     let cargo_path = find_workspace_root().join("Cargo.toml");
@@ -106,6 +107,7 @@ pub fn workspace(input: TokenStream) -> TokenStream {
 ///
 /// See also: [`crate::workspace!`], [`crate::file!`]
 #[proc_macro]
+#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn package(input: TokenStream) -> TokenStream {
     // use manifest dir for crate
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -152,6 +154,7 @@ pub fn package(input: TokenStream) -> TokenStream {
 ///
 /// See also: [`workspace!`], [`package!`]
 #[proc_macro]
+#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn file(input: TokenStream) -> TokenStream {
     __codegen(input, None) // we require the path to be passed in the macro, so we can directly do this
 }

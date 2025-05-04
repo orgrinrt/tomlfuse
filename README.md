@@ -14,6 +14,26 @@
 
 </div>
 
+# ⚠️ Deprecated: Use the equivalent [confuse](https://www.github.com/orgrinrt/confuse) crate instead ⚠️
+
+> [`confuse`](https://www.github.com/orgrinrt/confuse) is a more advanced and feature-rich fork that provides equivalent functionality with additional capabilities beyond just `toml`.
+
+>With the `toml` feature enabled, it is a drop-in replacement for `tomlfuse` with the same API and functionality. 
+> 
+> Also consider `default-features = false` if `toml` is the only format you need.
+
+##  Migration Guide
+Replace in your Cargo.toml:
+```toml
+tomlfuse = "0.0.x"
+```
+with:
+```toml
+confuse = { version = "0.0.x", features = ["toml"] }
+# you can also add `default-features = false,` for a direct replacement
+```
+Then update your imports from `tomlfuse::*;` to `confuse::toml::*;`
+
 ## Features
 
 - Compile-time binding of toml values to rust constants
