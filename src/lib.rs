@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-#![doc = stringify!(include!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")))]
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 use input::MacroInput;
 use proc_macro::TokenStream;
@@ -39,7 +39,7 @@ use utils::*;
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::workspace;
 ///
 /// workspace! {
@@ -80,7 +80,7 @@ pub fn workspace(input: TokenStream) -> TokenStream {
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::package;
 ///
 /// package! {
@@ -130,7 +130,7 @@ pub fn package(input: TokenStream) -> TokenStream {
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::file;
 ///
 /// file!(
@@ -148,8 +148,9 @@ pub fn package(input: TokenStream) -> TokenStream {
 ///
 /// // then use the generated consts
 /// fn setup() {
-///     println!("Starting {} v{}", app::NAME, app::VERSION;
+///     println!("Starting {} v{}", app::NAME, app::VERSION);
 ///     set_log_level(logging::LEVEL);
+/// }
 /// ```
 ///
 /// See also: [`workspace!`], [`package!`]
