@@ -10,29 +10,17 @@
 ![Crates.io Size](https://img.shields.io/crates/size/tomlfuse?color=%23C27AFF&link=https%3A%2F%2Fcrates.io%2Fcrates%2Ftomlfuse)
 ![GitHub last commit](https://img.shields.io/github/last-commit/orgrinrt/tomlfuse?color=%23009689&link=https%3A%2F%2Fgithub.com%2Forgrinrt%2Ftomlfuse)
 
-> Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
+> (Deprecated: use the `confuse` crate instead) Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 
 </div>
 
-# ⚠️ Deprecated: Use the equivalent [confuse](https://www.github.com/orgrinrt/confuse) crate instead ⚠️
+# ⚠️ Deprecated: superseded by [`confuse`](https://www.github.com/orgrinrt/confuse) ⚠️
 
-> [`confuse`](https://www.github.com/orgrinrt/confuse) is a more advanced and feature-rich fork that provides equivalent functionality with additional capabilities beyond just `toml`.
-
->With the `toml` feature enabled, it is a drop-in replacement for `tomlfuse` with the same API and functionality. 
-> 
-> Also consider `default-features = false` if `toml` is the only format you need.
-
-##  Migration Guide
-Replace in your Cargo.toml:
-```toml
-tomlfuse = "0.0.x"
-```
-with:
-```toml
-confuse = { version = "0.0.x", features = ["toml"] }
-# you can also add `default-features = false,` for a direct replacement
-```
-Then update your imports from `tomlfuse::*;` to `confuse::toml::*;`
+> [`confuse`](https://www.github.com/orgrinrt/confuse) is the planned successor, generalizing this crate's approach beyond `toml` to other file formats (`json`, `yaml`, `ron`), plus additional binding forms such as environment variables and a `#[fuse]` attribute macro.
+>
+> `confuse` is currently a work-in-progress rewrite: only its `bind!` macro's syntax surface is defined, its parser is unimplemented, and it does not yet generate code for any format, including `toml`. Its own README states this directly and recommends staying on `tomlfuse` version `0.0.3` for `toml` file binding until it reaches a working release.
+>
+> There is no functional migration path today. Keep using this crate for `toml` binding, and check `confuse`'s README for migration steps once it ships a working `toml` feature.
 
 ## Features
 
@@ -206,4 +194,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/master/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/main/LICENSE)
