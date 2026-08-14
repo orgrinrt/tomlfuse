@@ -10,17 +10,16 @@
 ![Crates.io Size](https://img.shields.io/crates/size/tomlfuse?color=%23C27AFF&link=https%3A%2F%2Fcrates.io%2Fcrates%2Ftomlfuse)
 ![GitHub last commit](https://img.shields.io/github/last-commit/orgrinrt/tomlfuse?color=%23009689&link=https%3A%2F%2Fgithub.com%2Forgrinrt%2Ftomlfuse)
 
-> (Deprecated: use the `confuse` crate instead) Easily bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
+> Bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 
 </div>
 
-# ⚠️ Deprecated: superseded by [`confuse`](https://www.github.com/orgrinrt/confuse) ⚠️
+## Relationship to `confuse`
 
-> [`confuse`](https://www.github.com/orgrinrt/confuse) is the planned successor, generalizing this crate's approach beyond `toml` to other file formats (`json`, `yaml`, `ron`), plus additional binding forms such as environment variables and a `#[fuse]` attribute macro.
->
-> `confuse` is currently a work-in-progress rewrite: only its `bind!` macro's syntax surface is defined, its parser is unimplemented, and it does not yet generate code for any format, including `toml`. Its own README states this directly and recommends staying on `tomlfuse` version `0.0.3` for `toml` file binding until it reaches a working release.
->
-> There is no functional migration path today. Keep using this crate for `toml` binding, and check `confuse`'s README for migration steps once it ships a working `toml` feature.
+[`confuse`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
+other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
+crate is the working `toml` implementation and is not deprecated: binding toml is what it does,
+and it does that completely.
 
 ## Features
 
