@@ -18,8 +18,9 @@
 
 [`confuse`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
 other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
-crate is the working `toml` implementation and is not deprecated: binding toml is what it does,
-and it does that completely.
+crate is the working `toml` implementation and is not deprecated. `file!` and `package!` are
+covered by integration tests; `workspace!` is not, and the
+[limitations](#limitations-and-future-work) below still apply.
 
 ## Features
 
