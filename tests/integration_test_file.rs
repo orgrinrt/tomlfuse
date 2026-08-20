@@ -86,7 +86,10 @@ fn test_generated_file_constants() {
     assert_eq!(mixed::STANDALONE, "top-level");
     assert_eq!(mixed::STRING, "text");
     assert_eq!(mixed::NUMBER, 42);
-    assert_eq!(mixed::FLOAT, 3.14);
+    // The literal is the toml's value, not an approximation of pi that anyone chose.
+    #[allow(clippy::approx_constant)]
+    let expected_float = 3.14;
+    assert_eq!(mixed::FLOAT, expected_float);
     assert_eq!(mixed::ARRAY.len(), 3);
     assert_eq!(mixed::ARRAY[0], 1);
     assert_eq!(mixed::ARRAY[1], 2);

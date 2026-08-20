@@ -273,6 +273,16 @@ impl<'a> ToTokens for RootModule<'a> {
 
         tokens.extend(quote! {
             #tracker
+            // Lints that fire on a value rather than on how it was written do not belong
+            // on generated code: the value came from the consumer's toml and the code
+            // came from here, so neither party can act on the diagnostic. A toml holding
+            // 3.14159 made `clippy::approx_constant` a deny-level error spanned at the
+            // macro invocation, which no `#[allow]` in the consumer's own source reaches.
+            #[allow(
+                clippy::approx_constant,
+                clippy::excessive_precision,
+                clippy::unreadable_literal,
+            )]
             pub mod #root_mod_name {
                 #fields
             }
