@@ -502,7 +502,7 @@ impl<'a> TomlFields<'a> {
         });
         let alias_name = alias
             .as_ref()
-            .and_then(|(alias, _)| if alias == &"*" { None } else { Some(alias) })
+            .and_then(|(alias, _)| if alias == "*" { None } else { Some(alias) })
             .map(|alias| alias.to_string());
         let is_alias = alias.is_some();
         let aliased_path = if let Some((alias, _)) = alias {
@@ -525,7 +525,7 @@ impl<'a> TomlFields<'a> {
         } else {
             let field = TomlField::new(
                 path.split('.')
-                    .last()
+                    .next_back()
                     .expect("Expected a valid path to extract name from"),
                 // path.split_once('.').unwrap_or((path, path)).1, // FIXME: this wont work with patterns like * or ** or **.** etc.
                 &path,
@@ -623,7 +623,6 @@ impl<'a> TomlFields<'a> {
     /// Recursively generates modules for table fields and constants for value fields.
     /// The structure of the generated code reflects the effective module paths
     /// derived from the TOML structure and the applied patterns.
-
     fn generate_module(&self, idx: usize, tokens: &mut TokenStream2) {
         // get module name (last component of path)
         let module_name = self
@@ -631,7 +630,7 @@ impl<'a> TomlFields<'a> {
             .expect("Expected a valid index to an existing field")
             .path
             .split('.')
-            .last()
+            .next_back()
             .expect("Expected there to be at least one node from split by '.'");
 
         let mod_ident: Option<syn::Ident> = if !module_name.is_empty() {
@@ -674,22 +673,23 @@ impl<'a> TomlFields<'a> {
         }
 
         if !mod_tokens.is_empty() {
-            tokens.extend(if mod_ident.is_some() {
-                let comment = get_doc_comment(
-                    self.get_field(idx)
-                        .expect("Expected this to be a valid field"),
-                );
-                let _mod_ident = mod_ident.unwrap();
-                quote! {
-                    #comment
-                    pub mod #_mod_ident {
-                        #mod_tokens
+            // A field with no name of its own contributes its contents to the enclosing
+            // module rather than opening one. Matching on the option carries that, where
+            // testing it and then unwrapping it left the two facts in different places.
+            tokens.extend(match mod_ident {
+                Some(name) => {
+                    let comment = get_doc_comment(
+                        self.get_field(idx)
+                            .expect("Expected this to be a valid field"),
+                    );
+                    quote! {
+                        #comment
+                        pub mod #name {
+                            #mod_tokens
+                        }
                     }
-                }
-            } else {
-                quote! {
-                    #mod_tokens
-                }
+                },
+                None => quote! { #mod_tokens },
             });
         }
     }

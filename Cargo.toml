@@ -1,6 +1,6 @@
 [package]
 name = "tomlfuse"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 # globset 0.4.20 is a direct dependency and declares 1.88, so nothing below that can build this
 # crate however old its own source is. 1.73 was a claim consumers could not act on.

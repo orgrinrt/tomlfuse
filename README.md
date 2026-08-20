@@ -27,7 +27,9 @@ covered by integration tests; `workspace!` is not, and the
 - Compile-time binding of toml values to rust constants
 - Flexibly preserve table hierarchies as nested modules
 - Glob pattern support for selecting what to bind and what not to
-  - Supports negated patterns for exclusion (`!` prefix)
+  - `*` for one segment, `**` for any number
+  - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
+  - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
 - Preserves comments from toml as doc comments
 - Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
@@ -139,11 +141,19 @@ fn main() {
   - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
 </details>
 
-- Glob syntax for collections, i.e `{a|b|c}`, or other more involved patterns is not supported yet either
+- Alternation is supported, spelled `{a,b,c}` with commas rather than pipes, which is what
+  globset reads. Character classes, `[a-z]`, are not, and will not be
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - This is something that would be preferable to support, but also not a priority right now, since the use case of toml file binding feels to me like something that would not often warrant the use of this kind of complexity
+  - A module header in this macro is `[name]`, and the macro input is a Rust token stream,
+    which carries no newlines. So `config.debug` on one line followed by `[classes]` on the
+    next is the same sequence of tokens as `config.debug[classes]`, and a parser that reads
+    a bracket after an identifier as a character class swallows the next module header
+    instead of starting a module
+  - That was implemented and then removed for exactly this reason. Each pattern passed when
+    tested alone, and the module following one went missing when they were tested together
+  - The delimiter is spoken for. Alternation has no such clash
 </details>
 
 - Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
