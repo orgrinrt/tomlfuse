@@ -125,7 +125,7 @@ fn main() {
     - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
     - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
       `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-      - A tradeoff between runtime performance and binary size and compilation time, essentially,
+      - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
         *if* someone truly needs this
   - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
 </details>
@@ -154,7 +154,7 @@ fn main() {
     - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
       - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
       - If there are multiple stars, then both sides of the alias assignment must match the same amount of stars, otherwise it won't work, which may or may not be obvious and would probably be confusing to the user
-  - In the long run, it'd be great to find a more robust solution, but this would be entirely outside this crate's scope, so it would be an integration of another crate that does this ultimately.
+  - In the long run it would be better to resolve these at parse time rather than by string matching, but that is outside this crate's scope and would mean integrating another crate that already does it.
     - I would be interested to hear suggestions in the meanwhile
 </details> 
 
