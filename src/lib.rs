@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-#![doc = stringify!(include!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")))]
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 use input::MacroInput;
 use proc_macro::TokenStream;
@@ -39,7 +39,7 @@ use utils::*;
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::workspace;
 ///
 /// workspace! {
@@ -58,7 +58,6 @@ use utils::*;
 ///
 /// See also: [`package!`], [`file!`]
 #[proc_macro]
-#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn workspace(input: TokenStream) -> TokenStream {
     // find workspace root
     let cargo_path = find_workspace_root().join("Cargo.toml");
@@ -80,7 +79,7 @@ pub fn workspace(input: TokenStream) -> TokenStream {
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::package;
 ///
 /// package! {
@@ -107,7 +106,6 @@ pub fn workspace(input: TokenStream) -> TokenStream {
 ///
 /// See also: [`crate::workspace!`], [`crate::file!`]
 #[proc_macro]
-#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn package(input: TokenStream) -> TokenStream {
     // use manifest dir for crate
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -130,7 +128,7 @@ pub fn package(input: TokenStream) -> TokenStream {
 /// Each section header creates a module; patterns select which keys to expose as constants.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use tomlfuse::file;
 ///
 /// file!(
@@ -148,13 +146,13 @@ pub fn package(input: TokenStream) -> TokenStream {
 ///
 /// // then use the generated consts
 /// fn setup() {
-///     println!("Starting {} v{}", app::NAME, app::VERSION;
+///     println!("Starting {} v{}", app::NAME, app::VERSION);
 ///     set_log_level(logging::LEVEL);
+/// }
 /// ```
 ///
 /// See also: [`workspace!`], [`package!`]
 #[proc_macro]
-#[deprecated(since = "0.0.3", note = "This crate is deprecated. Please use the `confuse` crate instead.")]
 pub fn file(input: TokenStream) -> TokenStream {
     __codegen(input, None) // we require the path to be passed in the macro, so we can directly do this
 }
