@@ -57,6 +57,11 @@ fn the_alternatives_keep_their_own_names() {
     // segments is what gets stripped. An alternation is not one, so both branches stay
     // named, and they have to: `logging.level` and `settings.level` would otherwise
     // collide on `LEVEL`.
+    //
+    // The check is that these paths resolve at all, which happens at compile time. An
+    // assertion about the values would add nothing: the previous version of this test
+    // ended in `assert_ne!(either::settings::TIMEOUT, 0)`, which is true of a constant
+    // whose value is 500 whatever the module is called.
     assert_eq!(either::logging::LEVEL, "info");
-    assert_ne!(either::settings::TIMEOUT, 0);
+    assert_eq!(either::settings::TIMEOUT, 500);
 }
