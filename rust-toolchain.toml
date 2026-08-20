@@ -1,2 +1,5 @@
 [toolchain]
-channel = "1.73.0"
+# 1.73.0 could not resolve the dependency graph any more: globset 0.4.20 needs edition 2024, and
+# pinning it back only moved the failure to hashbrown. The suite passes on stable unchanged.
+channel = "stable"
+components = ["rustfmt", "clippy"]
