@@ -2,7 +2,9 @@
 name = "tomlfuse"
 version = "0.0.4"
 edition = "2021"
-rust-version = "1.73.0"
+# globset 0.4.20 is a direct dependency and declares 1.88, so nothing below that can build this
+# crate however old its own source is. 1.73 was a claim consumers could not act on.
+rust-version = "1.88.0"
 description = """
 Bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 """
