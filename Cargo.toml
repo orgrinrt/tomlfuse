@@ -30,7 +30,32 @@ count = 3
 [badges]
 maintenance = { status = "actively-developed" }
 
+[features]
+default = []
+# What a `package!`, `workspace!` or `file!` invocation expands into names nothing outside
+# `core`. Every value becomes a `pub const` of `&'static str`, `&'static [T]`, `i64`, `f64`
+# or `bool`, wrapped in `pub mod` and doc comments, plus one `include_bytes!` that binds the
+# toml as a build input. None of that is `std`, so a `#![no_std]` consumer with no allocator
+# gets working constants today and got them before this feature existed.
+#
+# Nothing in `src/` reads the flag, because there is nothing to switch. It exists so a
+# workspace that turns `no_std` on across every dependency can name it here without the
+# build failing on an unknown feature, and so the guarantee has somewhere to be written
+# down. `tests/no_std_consumer.rs` is what holds it: it compiles a real `#![no_std]` crate
+# against this one, with a control proving that crate genuinely has no `std` to fall back
+# on.
+#
+# This crate itself is always built with `std`, on both flags. It is a proc macro, so it
+# runs on the host inside the compiler and could not be `no_std` whatever it declared.
+no_std = []
+# The expansion allocates nothing at runtime. A `const` lives in the binary, and a
+# `&'static [T]` points into it, so there is no allocation to lend and no host to lend it.
+# notko's lending contract has no role here, and no test can tell this flag from `no_std`,
+# because there is nothing to tell apart.
+no_alloc = ["no_std"]
+
 [dev-dependencies]
+trybuild = "1.0"
 tempfile = "3.19.1"
 
 [lib]

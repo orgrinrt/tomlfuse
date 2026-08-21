@@ -18,9 +18,9 @@
 
 [`confuse`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
 other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
-crate is the working `toml` implementation and is not deprecated. `file!` and `package!` are
-covered by integration tests; `workspace!` is not, and the
-[limitations](#limitations-and-future-work) below still apply.
+crate is the working `toml` implementation and is not deprecated. All three macros are
+covered by integration tests, and the [limitations](#limitations-and-future-work) below still
+apply.
 
 ## Features
 
@@ -34,6 +34,38 @@ covered by integration tests; `workspace!` is not, and the
 - Preserves comments from toml as doc comments
 - Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
+- Works in `#![no_std]`, with or without an allocator
+
+### `no_std` and no allocator
+
+A binding names nothing outside `core`. Every value becomes a `pub const` of `&'static str`,
+`&'static [T]`, `i64`, `f64` or `bool`, wrapped in `pub mod` and doc comments, plus one
+`include_bytes!` binding the toml as a build input so editing it rebuilds what came out of it.
+None of that is `std`, and none of it allocates: a `const` lives in the binary and a
+`&'static [T]` points into it.
+
+There are `no_std` and `no_alloc` features. Neither switches anything, because there is nothing
+to switch; they exist so a workspace that turns them on across every dependency can name them
+here. `tests/no_std_consumer.rs` is what holds the guarantee, by building a real `#![no_std]`
+crate against this one with a control proving that crate genuinely has no `std` to fall back on.
+
+This crate itself always builds with `std`. It is a proc macro, so it runs on the host inside
+the compiler.
+
+### Examples
+
+`examples/` holds one example per piece of the pattern language, each reading a slice of the
+same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
+[value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs),
+[aliases](examples/aliases.rs), [alternation](examples/alternation.rs) and
+[nesting](examples/nested_modules.rs). Two more put them together:
+[`whole_app_config`](examples/whole_app_config.rs) uses the whole language on one file, and
+[`build_metadata_and_config`](examples/build_metadata_and_config.rs) runs `package!` and
+`file!` in one binary.
+
+```bash
+cargo run --example whole_app_config
+```
 
 
 ## Usage

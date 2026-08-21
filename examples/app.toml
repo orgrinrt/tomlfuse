@@ -1,0 +1,38 @@
+# The configuration every example in this directory reads a slice of. It is shaped like a
+# real application's toml rather than a matrix of cases, so the patterns in the examples are
+# the patterns a consumer would actually write.
+
+# The name and version the binary reports.
+[app]
+name = "orrery"
+version = "2.4.0"
+# Whether the build is willing to talk about what it is doing.
+verbose = true
+
+[server]
+host = "127.0.0.1"
+port = 8080
+# Seconds before a request gives up.
+timeout = 30
+# Set by an operator, and of no interest to the binary.
+internal.deploy_slot = "blue"
+internal.owner = "platform"
+
+[database]
+url = "postgres://localhost/orrery"
+pool_size = 16
+timeout = 5
+
+[logging]
+level = "info"
+format = "json"
+targets = ["stdout", "file"]
+
+[telemetry]
+enabled = false
+endpoint = "https://telemetry.example/ingest"
+sample_rate = 0.05
+
+[limits]
+max_body_bytes = 1048576
+max_connections = 512
