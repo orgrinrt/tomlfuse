@@ -10,7 +10,6 @@ use crate::pattern::Pattern;
 use crate::utils;
 use globset::{Glob, GlobSetBuilder};
 
-
 /// Finds the toml file and reads it, returning where it was found alongside its contents.
 ///
 /// Three places are tried, in this order: the path as given, then relative to the
@@ -29,11 +28,26 @@ fn resolve_toml(toml_path: &str) -> (PathBuf, String) {
     let manifest_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").expect("Expected CARGO_MANIFEST_DIR to be in env"),
     );
-    let candidates = [
-        PathBuf::from(toml_path),
-        utils::find_workspace_root().join(toml_path),
-        manifest_dir.join(toml_path),
-    ];
+
+    // Relative to the crate first, then to the workspace. Not relative to the current
+    // directory, which this used to try before either: a proc macro runs inside the compiler
+    // and the current directory is wherever cargo happened to be invoked. That worked by
+    // coincidence, because the default target directory sits inside the crate and
+    // `find_workspace_root` climbs back out of it, and it stopped the moment
+    // `CARGO_TARGET_DIR` pointed anywhere else, which CI routinely does.
+    //
+    // An absolute path is taken as given, since neither join would change it.
+    let given = PathBuf::from(toml_path);
+    let mut candidates: Vec<PathBuf> = if given.is_absolute() {
+        vec![given]
+    } else {
+        vec![manifest_dir.join(toml_path), utils::find_workspace_root().join(toml_path)]
+    };
+
+    // `find_workspace_root` falls back to the manifest directory, so for a crate that is not
+    // in a workspace the two are the same path. Printing it twice under prose promising two
+    // different strategies is what the old message did.
+    candidates.dedup();
 
     for candidate in &candidates {
         if let Ok(contents) = fs::read_to_string(candidate) {
@@ -46,8 +60,8 @@ fn resolve_toml(toml_path: &str) -> (PathBuf, String) {
     }
 
     panic!(
-        "tomlfuse: could not read `{toml_path}`. Looked in:\n  {}\nThe path is taken as \
-         given, then relative to the workspace root, then relative to the crate root.",
+        "tomlfuse: could not read `{toml_path}`. Looked in:\n  {}\nA relative path is taken \
+         relative to the crate, then to the workspace root.",
         candidates
             .iter()
             .map(|c| c.display().to_string())
@@ -271,6 +285,24 @@ impl<'a> ToTokens for RootModule<'a> {
             }
         });
 
+        // A section is named in the macro invocation rather than in the toml, so there is no
+        // comment anywhere that could document it, and it shipped with none. That made this
+        // crate unusable from any crate carrying `#![deny(missing_docs)]`: the lint fires on
+        // the generated module, spanned at the invocation, where no `#[allow]` the consumer
+        // writes can reach it. Saying where the contents came from is the documentation a
+        // reader of `cargo doc` wanted anyway.
+        let root_mod_doc = {
+            let text = match self.source.resolved_path.as_ref() {
+                Some(path) => format!(
+                    "Constants bound from `{}`.",
+                    path.file_name()
+                        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
+                ),
+                None => "Constants bound from a toml file.".to_string(),
+            };
+            quote! { #[doc = #text] }
+        };
+
         tokens.extend(quote! {
             #tracker
             // Lints that fire on a value rather than on how it was written do not belong
@@ -278,11 +310,20 @@ impl<'a> ToTokens for RootModule<'a> {
             // came from here, so neither party can act on the diagnostic. A toml holding
             // 3.14159 made `clippy::approx_constant` a deny-level error spanned at the
             // macro invocation, which no `#[allow]` in the consumer's own source reaches.
+            //
+            // `missing_docs` is the same thing pointed at documentation. A comment in the
+            // toml becomes a `#[doc]` and shows up in `cargo doc`, which is the feature; a
+            // key without one is a key somebody chose not to comment, and their config file
+            // is not the place a crate's documentation policy belongs. It is unsatisfiable
+            // besides, since a table that a dotted key brings into being has nowhere to put
+            // a comment: `a.b = 1` documents `b`, and `a` never gets a line of its own.
             #[allow(
                 clippy::approx_constant,
                 clippy::excessive_precision,
                 clippy::unreadable_literal,
+                missing_docs,
             )]
+            #root_mod_doc
             pub mod #root_mod_name {
                 #fields
             }

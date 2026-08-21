@@ -1,0 +1,17 @@
+# The application's own identity.
+[app]
+# What it calls itself.
+name = "orrery"
+
+# How it reaches the network.
+[server]
+# The interface it binds.
+host = "127.0.0.1"
+# Seconds before a request gives up.
+timeout = 30
+# Operator bookkeeping, of no interest to the binary.
+internal.owner = "platform"
+
+# A table whose key carries no comment of its own, for the `missing_docs` case.
+[bare]
+value = "undocumented"

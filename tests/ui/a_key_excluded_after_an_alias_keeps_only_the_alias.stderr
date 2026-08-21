@@ -1,0 +1,5 @@
+error[E0425]: cannot find value `TIMEOUT` in module `runtime`
+  --> tests/ui/a_key_excluded_after_an_alias_keeps_only_the_alias.rs:20:22
+   |
+20 |     let _ = runtime::TIMEOUT;
+   |                      ^^^^^^^ not found in `runtime`
