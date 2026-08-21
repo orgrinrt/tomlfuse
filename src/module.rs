@@ -271,6 +271,26 @@ impl<'a> ToTokens for RootModule<'a> {
             }
         });
 
+        // A section is named in the macro invocation rather than in the toml, so there is no
+        // comment anywhere that could document it, and it shipped with none. That made this
+        // crate unusable from any crate carrying `#![deny(missing_docs)]`: the lint fires on
+        // the generated module, spanned at the invocation, where no `#[allow]` the consumer
+        // writes can reach it. Saying where the contents came from is the documentation a
+        // reader of `cargo doc` wanted anyway.
+        let root_mod_doc = {
+            let text = match self.source.resolved_path.as_ref() {
+                Some(path) => format!(
+                    "Constants bound from `{}`.",
+                    path.file_name().map_or_else(
+                        || path.to_string_lossy(),
+                        |name| name.to_string_lossy()
+                    )
+                ),
+                None => "Constants bound from a toml file.".to_string(),
+            };
+            quote! { #[doc = #text] }
+        };
+
         tokens.extend(quote! {
             #tracker
             // Lints that fire on a value rather than on how it was written do not belong
@@ -278,11 +298,20 @@ impl<'a> ToTokens for RootModule<'a> {
             // came from here, so neither party can act on the diagnostic. A toml holding
             // 3.14159 made `clippy::approx_constant` a deny-level error spanned at the
             // macro invocation, which no `#[allow]` in the consumer's own source reaches.
+            //
+            // `missing_docs` is the same thing pointed at documentation. A comment in the
+            // toml becomes a `#[doc]` and shows up in `cargo doc`, which is the feature; a
+            // key without one is a key somebody chose not to comment, and their config file
+            // is not the place a crate's documentation policy belongs. It is unsatisfiable
+            // besides, since a table that a dotted key brings into being has nowhere to put
+            // a comment: `a.b = 1` documents `b`, and `a` never gets a line of its own.
             #[allow(
                 clippy::approx_constant,
                 clippy::excessive_precision,
                 clippy::unreadable_literal,
+                missing_docs,
             )]
+            #root_mod_doc
             pub mod #root_mod_name {
                 #fields
             }
