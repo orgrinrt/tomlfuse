@@ -150,8 +150,7 @@ impl Parse for PatternSegment {
             // through Rust's tokeniser.
             let content;
             syn::braced!(content in input);
-            let alternatives =
-                Punctuated::<PatternSegment, Token![,]>::parse_terminated(&content)?;
+            let alternatives = Punctuated::<PatternSegment, Token![,]>::parse_terminated(&content)?;
             if alternatives.is_empty() {
                 return Err(content.error("an alternation needs at least one alternative"));
             }

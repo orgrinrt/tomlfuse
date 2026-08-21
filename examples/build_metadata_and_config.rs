@@ -45,7 +45,11 @@ file! {
 fn main() {
     println!("{} {}", pkg::NAME, pkg::VERSION);
     println!("  {}", pkg::DESCRIPTION.trim());
-    println!("  licensed {}, built for rust {}", pkg::LICENSE, pkg::RUST_VERSION);
+    println!(
+        "  licensed {}, built for rust {}",
+        pkg::LICENSE,
+        pkg::RUST_VERSION
+    );
     println!();
 
     println!("built against");

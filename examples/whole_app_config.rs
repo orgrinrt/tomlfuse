@@ -66,11 +66,19 @@ fn main() {
 
     println!("listening on {}:{}", runtime::HOST, runtime::PORT);
     println!("  requests give up after {}s", runtime::REQUEST_TIMEOUT);
-    println!("  database {}, pool of {}", runtime::URL, runtime::POOL_SIZE);
+    println!(
+        "  database {}, pool of {}",
+        runtime::URL,
+        runtime::POOL_SIZE
+    );
     println!("  queries give up after {}s", runtime::QUERY_TIMEOUT);
     println!();
 
-    println!("logging {} as {}", observability::logging::LEVEL, observability::logging::FORMAT);
+    println!(
+        "logging {} as {}",
+        observability::logging::LEVEL,
+        observability::logging::FORMAT
+    );
     println!("  to {:?}", observability::logging::TARGETS);
     if observability::telemetry::ENABLED {
         println!(
@@ -84,7 +92,10 @@ fn main() {
     println!();
 
     println!("refusing bodies over {} bytes", ceilings::MAX_BODY_BYTES);
-    println!("refusing more than {} connections", ceilings::MAX_CONNECTIONS);
+    println!(
+        "refusing more than {} connections",
+        ceilings::MAX_CONNECTIONS
+    );
 
     // The subtree that was carved out is not reachable by any name:
     //   runtime::internal::OWNER      does not exist

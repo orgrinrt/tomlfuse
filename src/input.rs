@@ -71,8 +71,7 @@ mod tests {
     /// Paths resolve against `CARGO_MANIFEST_DIR`, which for a unit test is this crate's
     /// root, so the fixture the `trybuild` cases use is reachable from here unchanged.
     fn generated(body: &str) -> String {
-        let input: MacroInput =
-            syn::parse_str(body).expect("the binding parses");
+        let input: MacroInput = syn::parse_str(body).expect("the binding parses");
         input.to_token_stream().to_string()
     }
 

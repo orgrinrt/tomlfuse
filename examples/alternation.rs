@@ -31,7 +31,11 @@ file! {
 }
 
 fn main() {
-    println!("logging at {} in {}", observability::logging::LEVEL, observability::logging::FORMAT);
+    println!(
+        "logging at {} in {}",
+        observability::logging::LEVEL,
+        observability::logging::FORMAT
+    );
     println!("telemetry enabled: {}", observability::telemetry::ENABLED);
     println!("body limit {} bytes", ceilings::MAX_BODY_BYTES);
     println!("connection limit {}", ceilings::MAX_CONNECTIONS);

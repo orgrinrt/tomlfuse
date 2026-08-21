@@ -43,8 +43,11 @@ list = ["one", "two"]
 /// and it builds into a target directory of its own so it does not fight the outer
 /// `cargo test` for the build lock.
 fn consumer_compiles(name: &str, features: &[&str], body: &str) -> (bool, String) {
-    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/target/no-std-consumers"))
-        .join(name);
+    let root = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/target/no-std-consumers"
+    ))
+    .join(name);
     fs::create_dir_all(root.join("src")).expect("the consumer directory");
     fs::write(root.join("surface.toml"), FIXTURE).expect("the consumer fixture");
 
@@ -107,11 +110,7 @@ pub const LIST: &[&str] = surface::LIST;
 #[test]
 fn a_no_std_consumer_compiles_on_every_selection() {
     for features in [&[][..], &["no_std"][..], &["no_alloc"][..], &["no_std", "no_alloc"][..]] {
-        let name = if features.is_empty() {
-            "default".to_string()
-        } else {
-            features.join("_")
-        };
+        let name = if features.is_empty() { "default".to_string() } else { features.join("_") };
         let (ok, stderr) = consumer_compiles(&format!("nostd_{name}"), features, USES_EVERY_TYPE);
         assert!(
             ok,

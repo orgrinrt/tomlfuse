@@ -10,7 +10,6 @@ use crate::pattern::Pattern;
 use crate::utils;
 use globset::{Glob, GlobSetBuilder};
 
-
 /// Finds the toml file and reads it, returning where it was found alongside its contents.
 ///
 /// Three places are tried, in this order: the path as given, then relative to the
@@ -29,11 +28,26 @@ fn resolve_toml(toml_path: &str) -> (PathBuf, String) {
     let manifest_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").expect("Expected CARGO_MANIFEST_DIR to be in env"),
     );
-    let candidates = [
-        PathBuf::from(toml_path),
-        utils::find_workspace_root().join(toml_path),
-        manifest_dir.join(toml_path),
-    ];
+
+    // Relative to the crate first, then to the workspace. Not relative to the current
+    // directory, which this used to try before either: a proc macro runs inside the compiler
+    // and the current directory is wherever cargo happened to be invoked. That worked by
+    // coincidence, because the default target directory sits inside the crate and
+    // `find_workspace_root` climbs back out of it, and it stopped the moment
+    // `CARGO_TARGET_DIR` pointed anywhere else, which CI routinely does.
+    //
+    // An absolute path is taken as given, since neither join would change it.
+    let given = PathBuf::from(toml_path);
+    let mut candidates: Vec<PathBuf> = if given.is_absolute() {
+        vec![given]
+    } else {
+        vec![manifest_dir.join(toml_path), utils::find_workspace_root().join(toml_path)]
+    };
+
+    // `find_workspace_root` falls back to the manifest directory, so for a crate that is not
+    // in a workspace the two are the same path. Printing it twice under prose promising two
+    // different strategies is what the old message did.
+    candidates.dedup();
 
     for candidate in &candidates {
         if let Ok(contents) = fs::read_to_string(candidate) {
@@ -46,8 +60,8 @@ fn resolve_toml(toml_path: &str) -> (PathBuf, String) {
     }
 
     panic!(
-        "tomlfuse: could not read `{toml_path}`. Looked in:\n  {}\nThe path is taken as \
-         given, then relative to the workspace root, then relative to the crate root.",
+        "tomlfuse: could not read `{toml_path}`. Looked in:\n  {}\nA relative path is taken \
+         relative to the crate, then to the workspace root.",
         candidates
             .iter()
             .map(|c| c.display().to_string())
@@ -281,10 +295,8 @@ impl<'a> ToTokens for RootModule<'a> {
             let text = match self.source.resolved_path.as_ref() {
                 Some(path) => format!(
                     "Constants bound from `{}`.",
-                    path.file_name().map_or_else(
-                        || path.to_string_lossy(),
-                        |name| name.to_string_lossy()
-                    )
+                    path.file_name()
+                        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
                 ),
                 None => "Constants bound from a toml file.".to_string(),
             };

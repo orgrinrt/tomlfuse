@@ -43,8 +43,31 @@ const EXPECTED_PASSING: usize = 1;
 
 /// Where `trybuild` puts the crate it builds the cases in. It declares its own `[workspace]`,
 /// so it is both the workspace root and the crate root that `file!` falls back to.
+///
+/// Under the resolved target directory rather than a literal `target/`. `CARGO_TARGET_DIR`
+/// moves it and CI routinely sets it, and this used to hardcode the name: the fixture then
+/// landed somewhere the scratch crate never reads and every case failed with the macro
+/// correctly reporting the file missing.
 fn scratch_crate() -> PathBuf {
-    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/target/tests/trybuild/tomlfuse"))
+    scratch_crate_under(&target_dir())
+}
+
+/// The same, from a build directory handed in rather than read from the environment.
+///
+/// Split out so the test below can check the property without mutating `CARGO_TARGET_DIR`.
+/// Tests in one binary run on threads of one process, so setting it would race whatever else
+/// is reading the environment, which is why `set_var` is unsafe. An earlier version of that
+/// test did exactly that and the suite failed intermittently.
+fn scratch_crate_under(target: &std::path::Path) -> PathBuf {
+    target.join("tests/trybuild/tomlfuse")
+}
+
+/// Where cargo is putting build output for this run.
+fn target_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
+        return PathBuf::from(dir);
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target")
 }
 
 #[test]
@@ -76,4 +99,25 @@ fn a_binding_leaves_out_what_the_pattern_excludes() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/*.rs");
     cases.pass("tests/ui/pass/*.rs");
+}
+
+/// The scratch crate follows the build directory, wherever cargo put it.
+///
+/// This is the property that broke, and it is worth stating rather than the one it looks like.
+/// `scratch_crate` hardcoded a literal `target/`, so with `CARGO_TARGET_DIR` set, which CI
+/// routinely does, the fixture was copied somewhere trybuild's crate never reads and every
+/// case above failed with the macro correctly reporting the file missing. The macro was right
+/// and the setup was wrong.
+#[test]
+fn the_scratch_crate_follows_the_build_directory() {
+    let elsewhere = PathBuf::from("/somewhere/not_called_target");
+    assert!(
+        scratch_crate_under(&elsewhere).starts_with(&elsewhere),
+        "the scratch crate sits under the build directory it was given",
+    );
+    // The control. Without it a function ignoring its argument and returning a constant would
+    // satisfy the assertion above whenever that constant happened to match.
+    let other = PathBuf::from("/a/different/place");
+    assert!(scratch_crate_under(&other).starts_with(&other));
+    assert_ne!(scratch_crate_under(&elsewhere), scratch_crate_under(&other));
 }
