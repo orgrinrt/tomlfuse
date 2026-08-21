@@ -65,9 +65,9 @@ fn test_generated_file_constants() {
     assert_eq!(main::ARRAY[2], "item3");
 
     // config section with hierarchy preserved
-    assert!(!config_vals::DEBUG); // should break if the type is not properly parsed as bool
+    const { assert!(!config_vals::DEBUG) }; // should break if the type is not properly parsed as bool
     assert_eq!(config_vals::settings::TIMEOUT, 500);
-    assert!(config_vals::VALUE); // should break if the type is not properly parsed as bool
+    const { assert!(config_vals::VALUE) }; // should break if the type is not properly parsed as bool
     assert_eq!(config_vals::STRING, "nested string");
     assert_eq!(config_vals::settings::RETRIES, 3);
     assert_eq!(config_vals::logging::LEVEL, "info");
@@ -76,7 +76,7 @@ fn test_generated_file_constants() {
     // nested values flattened in root
 
     // deep hierarchy tests
-    assert!(deep_stuff::level1::level2::level3::VALUE);
+    const { assert!(deep_stuff::level1::level2::level3::VALUE) };
     assert_eq!(deep_stuff::level1::level2::OTHER, "sibling");
     assert_eq!(deep_stuff::STANDALONE, "top-level");
     // this should not exist due to negation pattern:
@@ -86,18 +86,21 @@ fn test_generated_file_constants() {
     assert_eq!(mixed::STANDALONE, "top-level");
     assert_eq!(mixed::STRING, "text");
     assert_eq!(mixed::NUMBER, 42);
-    assert_eq!(mixed::FLOAT, 3.14);
+    // The literal is the toml's value, not an approximation of pi that anyone chose.
+    #[allow(clippy::approx_constant)]
+    let expected_float = 3.14;
+    assert_eq!(mixed::FLOAT, expected_float);
     assert_eq!(mixed::ARRAY.len(), 3);
     assert_eq!(mixed::ARRAY[0], 1);
     assert_eq!(mixed::ARRAY[1], 2);
     assert_eq!(mixed::ARRAY[2], 3);
-    assert!(mixed::BOOL);
+    const { assert!(mixed::BOOL) };
     assert_eq!(mixed::WITH_DASH, "dashed");
     assert_eq!(mixed::WITH_UNDERSCORE, "underscore");
     assert_eq!(mixed::quoted::KEY, "quoted");
 
     // direct paths
-    assert!(direct::VALUE);
+    const { assert!(direct::VALUE) };
     assert_eq!(direct::OTHER, "sibling");
 
     // duplicate keys at different levels
@@ -109,10 +112,10 @@ fn test_generated_file_constants() {
 
     // aliases
     assert_eq!(renamed::RENAMED_KEY, "value");
-    assert_eq!(renamed::SHORT_PATH, true);
+    const { assert!(renamed::SHORT_PATH) };
     assert_eq!(renamed::CLEAN_NAME, "dashed");
 
     // verify original test case still works
-    assert!(!original::DEBUG);
+    const { assert!(!original::DEBUG) };
     assert_eq!(original::settings::TIMEOUT, 500);
 }

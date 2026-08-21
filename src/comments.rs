@@ -65,7 +65,7 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
     let mut current_comments = Vec::new();
     let mut current_path = Vec::new();
 
-    for (_i, line) in lines.iter().enumerate() {
+    for line in lines.iter() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             current_comments.clear();
@@ -129,8 +129,8 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
         }
 
         // comments
-        if trimmed.starts_with('#') {
-            let comment_text = trimmed[1..].trim();
+        if let Some(body) = trimmed.strip_prefix('#') {
+            let comment_text = body.trim();
 
             // preserve empty comments as empty strings to create double newlines
             if comment_text.is_empty() {

@@ -299,7 +299,7 @@ mod tests {
         assert!(
             val.to_string().contains(&pat),
             "{}, should contain: {}",
-            val.to_string(),
+            val,
             pat
         );
     }
@@ -330,8 +330,10 @@ mod tests {
 
     #[test]
     fn test_get_doc_comment_with_escaping() {
-        let mut field = TomlField::default();
-        field.comment = Some("with `code` and 'quotes'".into());
+        let field = TomlField {
+            comment: Some("with `code` and 'quotes'".into()),
+            ..TomlField::default()
+        };
         let doc = get_doc_comment(&field).to_string();
         // assert!(doc.contains("with \\`code\\` and \\'quotes"));
         // verify doc comment contains the basic content
