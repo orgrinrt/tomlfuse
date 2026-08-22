@@ -12,9 +12,9 @@
 
 </div>
 
-## Relationship to `confuse`
+## Relationship to `confound`
 
-[`confuse`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
+[`confound`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
 other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
 crate is the working `toml` implementation and is not deprecated. All three macros are
 covered by integration tests, and the [limitations](#limitations-and-future-work) below still
@@ -205,7 +205,7 @@ fn main() {
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - It will be great to be able to confuse people outside of toml alone
+  - It will be great to be able to confound people outside of toml alone
     - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
       `ronfuse`...
       - but I digress
