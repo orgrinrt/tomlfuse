@@ -66,6 +66,19 @@ cargo run --example whole_app_config
 ```
 
 
+## Installation
+
+```bash
+cargo add tomlfuse
+```
+
+Or in `Cargo.toml`:
+
+```toml
+[dependencies]
+tomlfuse = "0.0.5"
+```
+
 ## Usage
 
 ### Binding from a file
