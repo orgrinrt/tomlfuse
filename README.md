@@ -3,20 +3,18 @@
 <div align="center" style="text-align: center;">
 
 [![GitHub Stars](https://img.shields.io/github/stars/orgrinrt/tomlfuse.svg)](https://github.com/orgrinrt/tomlfuse/stargazers)
-[![Crates.io Total Downloads](https://img.shields.io/crates/d/tomlfuse)](https://crates.io/crates/tomlfuse)
+[![Crates.io](https://img.shields.io/crates/v/tomlfuse)](https://crates.io/crates/tomlfuse)
+[![docs.rs](https://img.shields.io/docsrs/tomlfuse)](https://docs.rs/tomlfuse)
 [![GitHub Issues](https://img.shields.io/github/issues/orgrinrt/tomlfuse.svg)](https://github.com/orgrinrt/tomlfuse/issues)
-[![Latest Version](https://img.shields.io/badge/version-0.0.5-red.svg?label=latest)](https://github.com/orgrinrt/tomlfuse)
-![Crates.io Version](https://img.shields.io/crates/v/tomlfuse?logoSize=auto&color=%23FDC700&link=https%3A%2F%2Fcrates.io%2Fcrates%2Ftomlfuse)
-![Crates.io Size](https://img.shields.io/crates/size/tomlfuse?color=%23C27AFF&link=https%3A%2F%2Fcrates.io%2Fcrates%2Ftomlfuse)
-![GitHub last commit](https://img.shields.io/github/last-commit/orgrinrt/tomlfuse?color=%23009689&link=https%3A%2F%2Fgithub.com%2Forgrinrt%2Ftomlfuse)
+![License](https://img.shields.io/github/license/orgrinrt/tomlfuse?color=%23009689)
 
-> Bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
+> Toml fields bound into typed build-time constants with patterns and hierarchies.
 
 </div>
 
-## Relationship to `confuse`
+## Relationship to `confound`
 
-[`confuse`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
+[`confound`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
 other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
 crate is the working `toml` implementation and is not deprecated. All three macros are
 covered by integration tests, and the [limitations](#limitations-and-future-work) below still
@@ -67,6 +65,19 @@ same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
 cargo run --example whole_app_config
 ```
 
+
+## Installation
+
+```bash
+cargo add tomlfuse
+```
+
+Or in `Cargo.toml`:
+
+```toml
+[dependencies]
+tomlfuse = "0.0.5"
+```
 
 ## Usage
 
@@ -207,7 +218,7 @@ fn main() {
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - It will be great to be able to confuse people outside of toml alone
+  - It will be great to be able to confound people outside of toml alone
     - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
       `ronfuse`...
       - but I digress
@@ -236,4 +247,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/main/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/dev/LICENSE)

@@ -5,15 +5,16 @@ edition = "2021"
 # globset 0.4.20 is a direct dependency and declares 1.88, so nothing below that can build this
 # crate however old its own source is. 1.73 was a claim consumers could not act on.
 rust-version = "1.88.0"
+authors = ["orgrinrt", "Hiisi Digital"]  # read by this crate's own fixtures
 description = """
 Bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 """
-authors = ["orgrinrt <orgrinrt@ikiuni.dev>", "Hiisi Digital Oy <ort@hiisi.digital>"]
 # SPDX rather than a file reference: crates.io shows no identifier for `license-file`, so
 # licence scanners see nothing. The LICENSE file is the same MPL-2.0 text.
 license = "MPL-2.0"
 readme = "README.md"
 keywords = ["toml", "build-time", "constant", "proc-macro"]
+exclude = [".idea/", "target/"]
 categories = ["development-tools", "config"]
 documentation = "https://docs.rs/tomlfuse"
 homepage = "https://github.com/orgrinrt/tomlfuse"
