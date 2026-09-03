@@ -24,39 +24,35 @@ mod utils;
 
 use utils::*;
 
-/// Expands to a bound constants from the workspace's `Cargo.toml`.
+/// Binds constants from the workspace's `Cargo.toml`.
 ///
-/// Locates the workspace root by traversing up from the current crate,
-/// then generates modules and constants for selected keys and sections.
+/// The manifest is found by walking upwards from the crate being compiled (its
+/// `CARGO_MANIFEST_DIR`) until one with a `[workspace]` table turns up, and a crate that
+/// isn't in a workspace gets its own manifest instead, so for a single crate this reads the
+/// same file [`package!`] does. Everything after that is the same as [`file!`] with the path
+/// left out: sections in brackets, and under each the patterns whose matches land in it.
 ///
-/// # Pattern syntax
-/// - Dot notation for key paths: `workspace.members`
-/// - Wildcards for groups: `workspace.*`
-/// - Negation for exclusions: `!workspace.excluded`
-/// - Aliases for renaming: `alias new = old`
-/// - Section headers for modules: `[workspace]`
-///
-/// Each section header creates a module; patterns select which keys to expose as constants.
-///
-/// # Example
-/// ```ignore
+/// ```
 /// use tomlfuse::workspace;
 ///
 /// workspace! {
-///     // generate a module with bound workspace meta
-///     [workspace]
-///     workspace.*
+///     [members]
+///     workspace.members
+///
+///     [meta]
+///     workspace.metadata.*
 /// }
 ///
-/// // access the generated constants
 /// fn main() {
-///     for member in workspace::MEMBERS {
-///         println!("Found workspace member: {}", member);
+///     for member in members::MEMBERS {
+///         println!("{member}");
 ///     }
 /// }
 /// ```
 ///
-/// See also: [`package!`], [`file!`]
+/// Do note that `workspace.members` is an array of strings in the manifest, so it comes
+/// across as a `&'static [&'static str]`, and a `[workspace.metadata]` table becomes a
+/// module with a constant per key, the same as any other table.
 #[proc_macro]
 pub fn workspace(input: TokenStream) -> TokenStream {
     // find workspace root
@@ -65,46 +61,37 @@ pub fn workspace(input: TokenStream) -> TokenStream {
     __codegen(input, Some(cargo_path))
 }
 
-/// Expands to a module exposing constants from the current crate's `Cargo.toml`.
+/// Binds constants from the `Cargo.toml` of the crate being compiled.
 ///
-/// Enables compile-time access to desired package metadata, dependencies, features, and custom tables.
+/// The manifest is the one `CARGO_MANIFEST_DIR` points at, so there's no path to give, and
+/// the rest reads like [`file!`]: sections in brackets, and under each the patterns whose
+/// matches land in it. What it's mostly for is the questions a binary asks about itself,
+/// its version, its licence, and what it was compiled against, where `env!` and the
+/// `CARGO_PKG_*` variables cover the crate's own fields and nothing about the dependencies.
 ///
-/// # Pattern syntax
-/// - Dot notation for key paths: `package.name`
-/// - Wildcards for groups: `dependencies.*`
-/// - Negation for exclusions: `!package.metadata.excluded`
-/// - Aliases for renaming: `alias new = old.path.to.replace`
-/// - Section headers for modules: `[package]`
-///
-/// Each section header creates a module; patterns select which keys to expose as constants.
-///
-/// # Example
-/// ```ignore
+/// ```
 /// use tomlfuse::package;
 ///
 /// package! {
-///     // extract package meta
-///     [package]
+///     [pkg]
 ///     package.*
+///     !package.metadata.*
 ///
-///     // then extract the deps
 ///     [deps]
 ///     dependencies.*
 /// }
 ///
-/// // use the bound consts in your code
-/// fn version_info() -> String {
-///     format!("{} v{} by {}",
-///         package::NAME, package::VERSION, package::AUTHORS[0])
-/// }
-/// fn tokio_info() -> String {
-///     use deps::tokio::*;
-///     format!("{} v{} by {}",
-///         NAME, VERSION, AUTHORS[0])
+/// fn main() {
+///     println!("{} {}, {}", pkg::NAME, pkg::VERSION, pkg::LICENSE);
+///     println!("built against syn {}", deps::syn::VERSION);
 /// }
 /// ```
 ///
-/// See also: [`crate::workspace!`], [`crate::file!`]
+/// A dependency spelled as a plain version string is a constant of that string, and one
+/// spelled as a table (`syn = { version = "^2.0" }`) is a module holding the table's keys,
+/// which is the manifest's shape and not a choice made here. `[package.metadata]` is
+/// excluded above because that's where a project keeps its own things, but it binds like
+/// any other table when wanted. [`workspace!`] is the same over the workspace's manifest.
 #[proc_macro]
 pub fn package(input: TokenStream) -> TokenStream {
     // use manifest dir for crate
@@ -114,44 +101,48 @@ pub fn package(input: TokenStream) -> TokenStream {
     __codegen(input, Some(cargo_path))
 }
 
-/// Expands to bound constants from any toml file.
+/// Binds constants from a toml file at the given path.
 ///
-/// The first argument is the path to the toml file (relative to crate root).
+/// The path comes first, as a string literal. A relative one is looked up from the crate
+/// (its `CARGO_MANIFEST_DIR`) and then from the workspace root, an absolute one is taken as
+/// given, and a file found in neither place fails the build with both places named. The
+/// file is registered as a build input as well, so editing it rebuilds whatever was bound
+/// from it.
 ///
-/// # Pattern syntax
-/// - Dot notation for key paths: `foo.bar`
-/// - Wildcards for groups: `baz.*`
-/// - Negation for exclusions: `!foo.bar.excluded`
-/// - Aliases for renaming: `alias new = old.path.to.replace`
-/// - Section headers for modules: `[foo]`
+/// After the path come the sections. Each opens with a name in brackets, which becomes a
+/// `pub mod` of that name, and is followed by the patterns whose matches land in it: a
+/// dotted path where `*` matches one segment, `**` any number and `{a,b}` either name, a
+/// leading `!` takes its matches back out of the section, and `alias name = some.path`
+/// binds one value under a name of its own. Keys become upper case constants, tables become
+/// lower case modules, and the part of a path the pattern spells out by name is dropped, so
+/// `app.*` puts `app.name` at `NAME` directly under the section.
 ///
-/// Each section header creates a module; patterns select which keys to expose as constants.
-///
-/// # Example
-/// ```ignore
+/// ```
 /// use tomlfuse::file;
 ///
-/// file!(
-///     // path to source toml
-///     "tests/test.toml"
+/// file! {
+///     "examples/app.toml"
 ///
-///     // extract app config
 ///     [app]
 ///     app.*
-///     !app.logging.*
-///     
-///     [logging]
-///     app.logging.*
-/// );
 ///
-/// // then use the generated consts
-/// fn setup() {
-///     println!("Starting {} v{}", app::NAME, app::VERSION);
-///     set_log_level(logging::LEVEL);
+///     [logging]
+///     logging.*
+///     !logging.targets
+/// }
+///
+/// fn main() {
+///     println!("{} {}", app::NAME, app::VERSION);
+///     println!("logging at {} as {}", logging::LEVEL, logging::FORMAT);
 /// }
 /// ```
 ///
-/// See also: [`workspace!`], [`package!`]
+/// A string binds as `&'static str`, an integer as `i64`, a float as `f64`, a boolean as
+/// `bool` and an array of one element type as `&'static [T]`, so none of it needs `std` on
+/// the consumer's side. A datetime comes across as its string form, and an array mixing
+/// types lands as a single string of its debug form. Comments in the file become doc
+/// comments on what they sat above. [`package!`] and [`workspace!`] are this with the path
+/// left out and the manifest found from the crate instead.
 #[proc_macro]
 pub fn file(input: TokenStream) -> TokenStream {
     __codegen(input, None) // we require the path to be passed in the macro, so we can directly do this
