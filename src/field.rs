@@ -411,7 +411,7 @@ impl<'a> TomlFields<'a> {
         let relative_parent_field = self.get_by_name(&relative_parent_name).unwrap_or_else(|| {
             panic!(
                 "Expected a valid relative parent field ({} didn't exist, processing {})",
-                &relative_parent_name, this_field.name
+                relative_parent_name, this_field.name
             )
         });
         // println!("    >> Found relative parent for {}; field: {}", this_field.name, relative_parent_field.name);
