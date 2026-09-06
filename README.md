@@ -29,8 +29,12 @@ apply.
   - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
   - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
-- Preserves comments from toml as doc comments
+- Preserves comments from toml as doc comments, for keys, tables and arrays of tables,
+  and knows a `#` inside a quoted value from one that opens a comment
 - Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
+  - an array whose elements share a type is a slice of that type, nested arrays included
+  - an array whose elements do not is a tuple, one position per element, so each keeps its
+    own type
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
 - Works in `#![no_std]`, with or without an allocator
 
@@ -131,8 +135,7 @@ fn main() {
     println!("Package version: {}", pkg::VERSION);
     println!("Tokio version: {}", deps::tokio::VERSION);
     println!("Serde features: {:?}", deps::serde::FEATURES);
-    // note that currently this crate supports homogenous arrays, 
-    // so the features const would be, as expected, an array of strings!
+    // an array of strings in the toml is a `&'static [&'static str]` here
 }
 ```
 
@@ -162,17 +165,15 @@ fn main() {
 
 #### Value types and patterns
 
-- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
+- An array holding more than one type becomes a tuple, `[1, "a", 3.14]` giving a
+  `(i64, &'static str, f64)`, which keeps every element's own type at the cost of the
+  positions being fixed. An array of tables becomes the toml text of the tables as a string,
+  which is the one shape with no constant to be yet
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - This is planned for the future
-    - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
-    - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-      `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-      - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
-        *if* someone truly needs this
-  - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
+  - A struct per table shape would be the typed answer for arrays of tables, and needs a
+    design for naming the type and for arrays whose members differ in shape
 </details>
 
 - As of right now, more complex globs are not covered in tests (e.g.
@@ -227,7 +228,9 @@ fn main() {
 
 ## Compatibility
 
-This crate requires rust `1.73.0` or later. With present dependencies, this is the minimum supported version the dependencies allow. Bumping msrv is considered a breaking change and will be done in a minor version.
+This crate requires rust `1.88.0` or later, which is what its dependencies allow: globset
+declares that floor and nothing below it can build this crate however old its own source
+is. Bumping the msrv is considered a breaking change and will be done in a minor version.
 
 ### Versioning policy
 
