@@ -1,4 +1,4 @@
-error[E0433]: failed to resolve: could not find `internal` in `net`
+error[E0433]: cannot find `internal` in `net`
   --> tests/ui/an_excluded_key_is_not_reachable.rs:12:18
    |
 12 |     let _ = net::internal::OWNER;

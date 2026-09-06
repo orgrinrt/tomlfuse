@@ -8,234 +8,254 @@
 [![GitHub Issues](https://img.shields.io/github/issues/orgrinrt/tomlfuse.svg)](https://github.com/orgrinrt/tomlfuse/issues)
 ![License](https://img.shields.io/github/license/orgrinrt/tomlfuse?color=%23009689)
 
-> Toml fields bound into typed build-time constants with patterns and hierarchies.
+> Toml fields bound into typed constants at compile time, chosen with glob patterns. Ships `file!`, `package!` and `workspace!`, and what it emits is `core` only.
 
 </div>
 
-## Relationship to `confound`
+`tomlfuse` reads a toml file while the crate compiles and binds what it finds as ordinary
+constants, so `app.name` in the file becomes `settings::NAME` in the code, a `pub const` of
+`&'static str` holding whatever the file said at the moment of the build. Which keys come
+across is said with glob patterns over the dotted paths, and each group of patterns lands in
+a module named in the invocation, so the shape the rest of the program sees is chosen there
+and doesn't have to be the toml's own shape, though it can be that too.
 
-[`confound`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
-other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
-crate is the working `toml` implementation and is not deprecated. All three macros are
-covered by integration tests, and the [limitations](#limitations-and-future-work) below still
-apply.
+There's three macros and they differ only in where the file comes from. `file!` takes a
+path, `package!` reads the crate's own `Cargo.toml`, and `workspace!` climbs from there to
+the nearest manifest with a `[workspace]` table in it. So the version a binary prints, the
+dependencies it was compiled against and its own configuration can all come through the same
+mechanism and sit as constants in one binary.
 
-## Features
+Comments in the toml come across too, as doc comments on the constant or module they sit
+above, and the file gets registered as a build input (through an `include_bytes!` of it), so
+editing it rebuilds what was generated from it instead of leaving the previous values in
+place with the build reporting success.
 
-- Compile-time binding of toml values to rust constants
-- Flexibly preserve table hierarchies as nested modules
-- Glob pattern support for selecting what to bind and what not to
-  - `*` for one segment, `**` for any number
-  - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
-  - Negated patterns for exclusion (`!` prefix)
-- Alias support for renaming paths (`alias foo = bar.baz`)
-- Preserves comments from toml as doc comments
-- Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
-  - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
-- Works in `#![no_std]`, with or without an allocator
+The expansion names nothing outside `core`, so a `#![no_std]` crate with no allocator gets
+working constants out of this. The crate itself is a proc macro though, so it runs inside the
+compiler with `std` whatever the consumer is; only what it emits is what a consumer has to
+carry.
 
-### `no_std` and no allocator
-
-A binding names nothing outside `core`. Every value becomes a `pub const` of `&'static str`,
-`&'static [T]`, `i64`, `f64` or `bool`, wrapped in `pub mod` and doc comments, plus one
-`include_bytes!` binding the toml as a build input so editing it rebuilds what came out of it.
-None of that is `std`, and none of it allocates: a `const` lives in the binary and a
-`&'static [T]` points into it.
-
-There are `no_std` and `no_alloc` features. Neither switches anything, because there is nothing
-to switch; they exist so a workspace that turns them on across every dependency can name them
-here. `tests/no_std_consumer.rs` is what holds the guarantee, by building a real `#![no_std]`
-crate against this one with a control proving that crate genuinely has no `std` to fall back on.
-
-This crate itself always builds with `std`. It is a proc macro, so it runs on the host inside
-the compiler.
-
-### Examples
-
-`examples/` holds one example per piece of the pattern language, each reading a slice of the
-same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
-[value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs),
-[aliases](examples/aliases.rs), [alternation](examples/alternation.rs) and
-[nesting](examples/nested_modules.rs). Two more put them together:
-[`whole_app_config`](examples/whole_app_config.rs) uses the whole language on one file, and
-[`build_metadata_and_config`](examples/build_metadata_and_config.rs) runs `package!` and
-`file!` in one binary.
-
-```bash
-cargo run --example whole_app_config
-```
-
-
-## Installation
+## Usage
 
 ```bash
 cargo add tomlfuse
 ```
 
-Or in `Cargo.toml`:
+`file!` takes the path first, then one or more sections. A section opens with its name in
+brackets and is followed by the patterns whose matches land in it, so `[settings]` with
+`app.*` under it gives a `settings` module holding one constant per key under `[app]`:
 
-```toml
-[dependencies]
-tomlfuse = "0.0.5"
-```
-
-## Usage
-
-### Binding from a file
-
-```rust,ignore
+```rust
 use tomlfuse::file;
 
 file! {
-    "path/to/config.toml"
+    "examples/app.toml"
 
-    [settings] // <-- the module name that contains all the matches of the below patterns
-    config.*           // = include all config.* paths
-    !config.internal.* // = ...but exclude internals!
-
-    [shortcuts]
-    // you can create aliases for example to solve naming conflicts e.g when 
-    // bringing in and mixing multiple sections of a toml file that could have same named fields.
-    // note that aliases are intended for singular values (including tables though!)
-    // so they should not contain glob patterns.
-    alias timeout = config.params.timeout
+    [settings]
+    app.*
 }
 
 fn main() {
-    println!("Debug mode: {}", settings::DEBUG); // from toml's `config.debug`
-    println!("Timeout: {}", shortcuts::TIMEOUT); // from toml's `config.params.timeout`
+    println!("{} {}", settings::NAME, settings::VERSION);
+    if settings::VERBOSE {
+        println!("verbose");
+    }
 }
 ```
 
-### Binding from package (Cargo.toml)
+A relative path is looked up from the crate first (its `CARGO_MANIFEST_DIR`) and then from
+the workspace root, and an absolute one is taken as given. A file found in neither place is
+a compile error naming both, which is what a mistyped path should be.
 
-```rust,ignore
+A pattern is a dotted path with globs in it. `*` matches one segment and `**` any number,
+`{a,b}` matches either name at that position (commas and no spaces, since a space inside the
+braces is a character to be matched), and a leading `!` takes what the rest matches back out
+of the section it sits in. Order between the two doesn't matter, everything matched is
+collected first and then everything excluded is removed, and what's removed is gone rather
+than empty: naming it is a compile error. `alias name = some.path` binds one value under a
+name of its own, and it takes a single path, not a pattern. Character classes like `[a-z]`
+aren't part of it, because `[` is what opens a section header and the macro input has no line
+breaks in it to tell the two apart.
+
+Keys become upper case constants and tables become lower case modules, and a dash in a key
+turns into an underscore on the way, so `max-body-bytes` arrives as `MAX_BODY_BYTES`. The
+part of the path the pattern spells out by name gets dropped and what the glob matched keeps
+its shape: `config.*` gives `DEBUG` and `settings::TIMEOUT` for `config.debug` and
+`config.settings.timeout`, and a bare `**` reproduces the whole file as nested modules. An
+alternation keeps its names though, so `{logging,telemetry}.*` gives `logging::LEVEL` beside
+`telemetry::ENABLED` in place of piling both under one module, which they'd collide in.
+
+A string is a `&'static str`, an integer an `i64`, a float an `f64`, a boolean a `bool`, and
+an array whose elements are all of one type a `&'static [T]` of that. A datetime comes across
+as its string form, and an array mixing types lands as one string holding its debug form,
+which compiles but isn't much use; both are on the list further down.
+
+`package!` and `workspace!` take no path. The first reads the `Cargo.toml` of the crate being
+compiled and the second walks upwards from it until a manifest with a `[workspace]` table
+turns up, settling for the crate's own when none does. Everything after that reads the same:
+
+```rust
 use tomlfuse::package;
 
-// note that when path is omitted, the one from env, i.e. `CARGO_MANIFEST_DIR`, is used,
-// or if that is missing too, the closest we can find walking dirs upwards until system root
 package! {
     [pkg]
     package.*
+    !package.metadata.*
 
     [deps]
     dependencies.*
 }
-// the main reason this variant (and the workspace one too) of the macro exist is for convenience,
-// since one common use case is binding metadata from the package/workspace into the codebase.
-// not having to resolve and/or input the paths explicitly reduces the friction of using this crate
-// and also decreases the vectors for human error
 
 fn main() {
-    println!("Package name: {}", pkg::NAME);
-    println!("Package version: {}", pkg::VERSION);
-    println!("Tokio version: {}", deps::tokio::VERSION);
-    println!("Serde features: {:?}", deps::serde::FEATURES);
-    // note that currently this crate supports homogenous arrays, 
-    // so the features const would be, as expected, an array of strings!
+    println!("{} {}", pkg::NAME, pkg::VERSION);
+    println!("built against syn {}", deps::syn::VERSION);
 }
 ```
 
-### Binding from workspace
+Do note that a dependency spelled as a plain version string, `globset = "^0.4"`, is a
+constant (`deps::GLOBSET`), and one spelled as a table is a module with the table's keys in
+it, as above with `deps::syn::VERSION`. That's the toml's shape and not something this crate
+decides.
 
-Not currently covered with tests, so not guaranteed to work, but works similar to the package example.
+A comment above a key or a table, or on the same line after it, becomes a `#[doc]` on what it
+turned into, so a toml commented for whoever edits it documents the constants in `cargo doc`
+as well. A blank line between the comment and the key breaks the association, and a comment
+with nothing under it is dropped. The generated module carries an `#[allow]` for
+`missing_docs` and for the clippy lints that judge a literal's value, since the value came
+from the file and the code from here, and neither side can do anything about a diagnostic
+spanned at the macro invocation.
 
-When the path is omitted, looks for the first toml file that contains
-`[workspace]` in the current directory and upwards until system root.
+The [`examples/`](https://github.com/orgrinrt/tomlfuse/tree/main/examples) directory holds one
+file per piece of the pattern language, all reading slices of the same
+[`app.toml`](https://github.com/orgrinrt/tomlfuse/blob/main/examples/app.toml), and every one
+of them is built and run by the test suite, so they can't drift from what the crate parses.
 
-```rust,ignore
-use tomlfuse::workspace;
-workspace! {
-    [workspace]
-    members.*
-    !members.foo
+## Example
+
+Here's the binding for a small server, reading the `app.toml` the examples share. It has a
+`timeout` under both `[server]` and `[database]`, which would collide as `TIMEOUT` if both
+sections were bound into one module, so both are excluded and brought back under an alias
+each. The `internal` table under `[server]` is an operator's bookkeeping that the binary has
+no business knowing, so it's carved out. And the sections here are the program's own grouping:
+`runtime` gathers what the binary starts and `observability` what an operator turns up, and
+neither of those exists in the file.
+
+```rust
+use tomlfuse::file;
+
+file! {
+    "examples/app.toml"
+
+    // what the binary calls itself
+    [meta]
+    app.*
+
+    // what it starts, with the operator's bookkeeping left out and the two
+    // `timeout` keys given names that say which is which
+    [runtime]
+    server.*
+    database.*
+    !server.internal.*
+    !server.timeout
+    !database.timeout
+    alias request_timeout = server.timeout
+    alias query_timeout = database.timeout
+
+    // what an operator turns up when something is wrong
+    [observability]
+    {logging,telemetry}.*
+
+    // two keys out of one section, without taking the section
+    [ceilings]
+    limits.{max_body_bytes,max_connections}
 }
+
 fn main() {
-    println!("Workspace members: {:?}", workspace::MEMBERS);
-    // while members array in the toml *does* contain a field `foo`...
-    println!("Workspace's foo member: {:?}", workspace::FOO);
-    // ...this will *not* compile due to the exclusion!
+    println!("{} {}", meta::NAME, meta::VERSION);
+    println!("listening on {}:{}", runtime::HOST, runtime::PORT);
+    println!("  requests give up after {}s", runtime::REQUEST_TIMEOUT);
+    println!("  queries give up after {}s", runtime::QUERY_TIMEOUT);
+    println!("logging {} to {:?}", observability::logging::LEVEL, observability::logging::TARGETS);
+    if observability::telemetry::ENABLED {
+        println!("telemetry to {}", observability::telemetry::ENDPOINT);
+    }
+    println!("refusing bodies over {} bytes", ceilings::MAX_BODY_BYTES);
 }
 ```
 
-### Limitations and future work
+After this `runtime::TIMEOUT` doesn't exist and neither does `runtime::internal::OWNER`, and
+writing either is a build error, which is the whole point of excluding them over merely not
+reading them. Nothing here runs at startup either: every value is a constant in the binary, a
+pattern that stops matching is a compile error, and editing the toml rebuilds the lot.
 
-#### Value types and patterns
+## Motivation
 
-- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
-<details>
-<summary>*Click to expand notes*</summary>
+A configuration a binary reads at startup is a runtime failure waiting for the day the file
+is wrong, and a value that never changes between builds has little reason to be read at all.
+So the values get baked in: a pattern that stops matching fails the build, a type gets
+checked where the constant is used, and there's no parsing and no file access when the
+program runs. The cost is that changing a value means rebuilding, which is the trade, and
+it's the right one for build metadata and for the kind of configuration that ships inside the
+binary anyway, and the wrong one for anything an operator is meant to edit in place. This
+does nothing for the latter.
 
-  - This is planned for the future
-    - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
-    - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-      `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-      - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
-        *if* someone truly needs this
-  - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
-</details>
+`env!("CARGO_PKG_VERSION")` and its siblings cover the crate's own name, version and a few
+other fields, which is fine for what they cover. What they don't give is the versions of what
+the crate was compiled against, or the `[package.metadata]` table a project keeps its own
+things in, and those are what a `--version` line or a bug report actually wants; `package!`
+reads the manifest whole, so there's no list of fields to fall off.
 
-- As of right now, more complex globs are not covered in tests (e.g.
-  `config.*.timeout`), and may or may not work in different cases
-<details>
-<summary>*Click to expand notes*</summary>
+The same can be done with a build script writing a rust file for `include!`, and that's what
+this saves writing per project, along with getting the types and the module shape from the
+toml instead of by hand. The pattern language is the part that's worth having in one place,
+honestly, since every project that does this by hand ends up with some half of it.
 
-  - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
-  - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
-</details>
+## Extras
 
-- Alternation is supported, spelled `{a,b,c}` with commas rather than pipes, which is what
-  globset reads. Character classes, `[a-z]`, are not, and will not be
-<details>
-<summary>*Click to expand notes*</summary>
+### Status
 
-  - A module header in this macro is `[name]`, and the macro input is a Rust token stream,
-    which carries no newlines. So `config.debug` on one line followed by `[classes]` on the
-    next is the same sequence of tokens as `config.debug[classes]`, and a parser that reads
-    a bracket after an identifier as a character class swallows the next module header
-    instead of starting a module
-  - That was implemented and then removed for exactly this reason. Each pattern passed when
-    tested alone, and the module following one went missing when they were tested together
-  - The delimiter is spoken for. Alternation has no such clash
-</details>
+Early days still, so the api hasn't settled and a release can move things out from under
+whatever was written against the previous one. Every release is tagged and the log between
+two tags is what moved. The pattern language as described above is what's covered by tests
+and what I'd rely on; anything past it is best tried before being leaned on.
 
-- Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
-<details>
-<summary>*Click to expand notes*</summary>
+Builds on stable. The `rust-version` in the manifest is 1.88, which is what `globset`
+declares, so nothing older resolves the dependency graph whatever this crate's own source
+would have allowed.
 
-  - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
-    - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
-      - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
-      - If there are multiple stars, then both sides of the alias assignment must match the same amount of stars, otherwise it won't work, which may or may not be obvious and would probably be confusing to the user
-  - In the long run it would be better to resolve these at parse time rather than by string matching, but that is outside this crate's scope and would mean integrating another crate that already does it.
-    - I would be interested to hear suggestions in the meanwhile
-</details> 
+### Cargo features
 
-#### Extended features
+There are two, `no_std` and `no_alloc`, and neither switches anything, because there's
+nothing to switch: the expansion is `core` only and allocates nothing on every build, a
+`const` lives in the binary and a `&'static [T]` points into it. They exist so a workspace
+that turns those flags on across every dependency can name them here without the build
+failing on an unknown feature. `no_alloc` implies `no_std`. The guarantee is held by a test
+that writes out a real `#![no_std]` crate, builds it against this one on every feature
+selection, and checks with a control that the crate genuinely has no `std` to fall back on.
 
-- While constant time binding is the most useful case for something like this, it is not the only one, and I would like to explore the possibility of allowing for dynamic binding as well with some static safety measures such as creating a schematic based on a toml file for type-safe binding, and allowing sane statically typed instances of the toml file to be created and mutated at runtime with minimal, preferably zero dynamic dispatch overhead
-- While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
-<details>
-<summary>*Click to expand notes*</summary>
+### Limitations
 
-  - It will be great to be able to confound people outside of toml alone
-    - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
-      `ronfuse`...
-      - but I digress
-</details>
+Arrays have to be of one type. A mixed one, `[1, "a", 3.14]`, comes across as a single string
+of its debug form, which is at least a value that compiles, and not much more than that. I'm
+not sure a heterogeneous array is a common enough thing in a config to be worth typing it
+properly, but I'd be interested to hear of a use case that needs it.
 
+A datetime is bound as its string form, since there's no `core` type to bind it to.
 
-## Compatibility
+An alias takes one path and gives it one name. A pattern alias would have to say what happens
+to the part the star matched, and that's not settled, so for now the renaming is one value at
+a time.
 
-This crate requires rust `1.73.0` or later. With present dependencies, this is the minimum supported version the dependencies allow. Bumping msrv is considered a breaking change and will be done in a minor version.
+Character classes, `[a-z]`, are not supported and probably won't be, for the section header
+reason above. Alternation, `{a,b}`, covers most of what they'd be used for in a config.
 
-### Versioning policy
-
-Minor versions may have breaking changes, which can include bumping msrv.
-
-Patch versions are backwards compatible.
+`workspace!` reads whichever manifest opens a `[workspace]` table first on the way up, and a
+crate that isn't in one gets its own manifest, so for a single crate the two macros read the
+same file.
 
 ## Support
+
+Feel free to contribute! If unsure about wasting work, the best practice is to throw in an issue describing what you'd do, and only then commit to writing a big PR, because chances are, it might not be something that belongs here. However, forks are always a valid choice and we'd encourage everyone to experiment and have their own takes on this. When doing this, do mind the license(s) though!
 
 Whether you use this project, have learned something from it, or just like it, please consider supporting it by buying me a coffee, so I can dedicate more time on open-source projects like this :)
 
@@ -247,4 +267,4 @@ Whether you use this project, have learned something from it, or just like it, p
 
 `SPDX-License-Identifier: MPL-2.0`
 
-> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/dev/LICENSE)
+> You can check out the full license [here](https://github.com/orgrinrt/tomlfuse/blob/main/LICENSE)
