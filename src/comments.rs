@@ -6,12 +6,10 @@
 
 use std::collections::HashMap;
 
-/// State for tracking toml parsing context
+/// Which multi-line string, if any, the scan is inside of.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum StringState {
     None,
-    // SingleQuote,
-    // DoubleQuote,
     MultiSingleQuote,
     MultiDoubleQuote,
 }
@@ -102,30 +100,26 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
             continue;
         }
 
-        // section headers [section.subsection]
-        if trimmed.starts_with('[') {
-            if let Some(section_end) = trimmed.find(']') {
-                // extract section path
-                let section_path = &trimmed[1..section_end];
-                current_path.clear();
-                current_path = section_path.split('.').map(String::from).collect();
-                let section_str = section_path.to_string();
+        // A table header, `[section.sub]`, or an array-of-tables header, `[[section]]`.
+        // Both name a path; the second names it once per element, and every element's
+        // comment lands on the same path, last one winning, because the constants an
+        // array of tables becomes carry one name.
+        if let Some((section_path, header_end)) = section_header(trimmed) {
+            current_path = section_path
+                .split('.')
+                .map(|segment| segment.trim().trim_matches('"').to_string())
+                .collect();
+            let section_str = current_path.join(".");
 
-                // start with any preceding comments
-                let mut all_comments = current_comments.clone();
-
-                // check for inline comment
-                if let Some(inline) = extract_inline_comment(trimmed, section_end) {
-                    all_comments.push(inline);
-                }
-
-                // add combined comments
-                if !all_comments.is_empty() {
-                    comments.insert(section_str, all_comments.join("\n"));
-                }
-                current_comments.clear();
-                continue;
+            let mut all_comments = current_comments.clone();
+            if let Some(inline) = extract_inline_comment(trimmed, header_end) {
+                all_comments.push(inline);
             }
+            if !all_comments.is_empty() {
+                comments.insert(section_str, all_comments.join("\n"));
+            }
+            current_comments.clear();
+            continue;
         }
 
         // comments
@@ -148,7 +142,7 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
                 // support dotted keys in assignments
                 let mut full_path = current_path.clone();
                 for seg in key.split('.') {
-                    full_path.push(seg.trim().to_string());
+                    full_path.push(seg.trim().trim_matches('"').to_string());
                 }
                 let path_str = full_path.join(".");
 
@@ -176,18 +170,67 @@ pub fn extract_comments(content: &str) -> HashMap<String, String> {
     comments
 }
 
-// helper function to extract inline comments
-#[inline(always)]
-fn extract_inline_comment(line: &str, after_pos: usize) -> Option<String> {
-    if let Some(comment_pos) = line.find('#') {
-        if comment_pos > after_pos {
-            let comment = line[comment_pos + 1..].trim();
-            if !comment.is_empty() {
-                return Some(comment.to_string());
+/// The path a header line names and where the header ends, or `None` for a line that is
+/// not one.
+///
+/// `[[a.b]]` is an array-of-tables header and names `a.b`; `[a.b]` names the same. A line
+/// opening a bracket and never closing it is not a header.
+fn section_header(line: &str) -> Option<(&str, usize)> {
+    if let Some(rest) = line.strip_prefix("[[") {
+        let end = rest.find("]]")?;
+        return Some((&rest[..end], 2 + end + 2));
+    }
+    let rest = line.strip_prefix('[')?;
+    let end = rest.find(']')?;
+    Some((&rest[..end], 1 + end + 1))
+}
+
+/// Where a comment starts on a line, ignoring any `#` inside a quoted string.
+///
+/// `key = "a # b" # the comment` has two hashes and only the second opens a comment. A
+/// basic string may carry a backslash escape, so a `\"` inside one does not close it; a
+/// literal string has no escapes at all.
+fn comment_start(line: &str) -> Option<usize> {
+    let mut in_basic = false;
+    let mut in_literal = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if in_basic {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_basic = false;
+            }
+        } else if in_literal {
+            if ch == '\'' {
+                in_literal = false;
+            }
+        } else {
+            match ch {
+                '"' => in_basic = true,
+                '\'' => in_literal = true,
+                '#' => return Some(index),
+                _ => {},
             }
         }
     }
     None
+}
+
+/// The comment on a line after the position the key or header ended, if any.
+fn extract_inline_comment(line: &str, after_pos: usize) -> Option<String> {
+    let comment_pos = comment_start(line)?;
+    if comment_pos < after_pos {
+        return None;
+    }
+    let comment = line[comment_pos + 1..].trim();
+    if comment.is_empty() {
+        None
+    } else {
+        Some(comment.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -346,6 +389,72 @@ key = 10 # just inline
         assert_eq!(
             comments.get("next_key"),
             Some(&"this is an orphaned comment\nthat spans multiple lines".to_string())
+        );
+    }
+
+    #[test]
+    fn a_hash_inside_a_quoted_value_is_not_a_comment() {
+        // Two hashes on the delimiter, because the toml itself holds a `"#`.
+        let toml = r##"
+url = "https://example.test/#fragment" # the real comment
+literal = 'a # b'
+escaped = "say \"#\" here" # after the escape
+plain = 1 # one
+"##;
+        let comments = extract_comments(toml);
+        assert_eq!(comments.get("url"), Some(&"the real comment".to_string()));
+        assert!(
+            !comments.contains_key("literal"),
+            "the hash inside a literal string opened a comment: {comments:?}"
+        );
+        assert_eq!(
+            comments.get("escaped"),
+            Some(&"after the escape".to_string())
+        );
+        assert_eq!(comments.get("plain"), Some(&"one".to_string()));
+    }
+
+    #[test]
+    fn an_array_of_tables_header_names_the_table_path() {
+        // `[[servers]]` used to read as a header whose path was `[servers`, with the
+        // opening bracket kept and the closing one lost, so no comment ever reached the
+        // path a consumer could name.
+        let toml = r#"
+# the fleet
+[[servers]] # inline on the header
+# where it listens
+host = "a"
+
+[[servers]]
+host = "b"
+"#;
+        let comments = extract_comments(toml);
+        assert_eq!(
+            comments.get("servers"),
+            Some(&"the fleet\ninline on the header".to_string())
+        );
+        assert_eq!(
+            comments.get("servers.host"),
+            Some(&"where it listens".to_string())
+        );
+        assert!(
+            !comments.keys().any(|k| k.contains('[')),
+            "a bracket survived into a path: {comments:?}"
+        );
+    }
+
+    #[test]
+    fn a_quoted_key_is_recorded_without_its_quotes() {
+        // The fields are looked up by their normalised path, which has no quotes in it.
+        let toml = r#"
+["special-chars"]
+# a dashed key
+"with-dash" = 1
+"#;
+        let comments = extract_comments(toml);
+        assert_eq!(
+            comments.get("special-chars.with-dash"),
+            Some(&"a dashed key".to_string())
         );
     }
 

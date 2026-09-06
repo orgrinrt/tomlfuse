@@ -12,12 +12,18 @@ use std::{env, fs};
 use syn::LitStr;
 use toml::Value;
 
-/// Converts a toml `Value` into a pair of tokens:
-/// - First token represents the rust type (`&'static str`, `i64`, etc.)
-/// - Second token represents the literal value (`"foo"`, `42`, etc.)
+/// Turns a toml value into the type and the literal of the constant it becomes.
 ///
-/// Supports strings, integers, floats, booleans, datetimes, and homogeneous arrays.
-/// Falls back to string representation for complex/mixed types (which should not be used/valid anyway).
+/// Strings are `&'static str`, integers `i64`, floats `f64`, booleans `bool`. An array whose
+/// elements all become the same type is `&'static [T]` of that type, nested arrays included.
+/// An array whose elements do not is a tuple, one position per element, since that is the
+/// one shape that holds several types at compile time without a box or a dispatch.
+///
+/// A datetime is its textual form, and a table inside an array is the toml text of the
+/// table: neither has a constant to be.
+// FIXME: a table inside an array becomes a string of toml. A struct per table shape would
+// be the typed answer, and needs a design for naming the type and for arrays of tables
+// whose members differ.
 #[cold]
 pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
     match value {
@@ -26,123 +32,68 @@ pub fn convert_value_to_tokens(value: &Value) -> (TokenStream2, TokenStream2) {
         Value::Float(f) => (quote! { f64 }, quote! { #f }),
         Value::Boolean(b) => (quote! { bool }, quote! { #b }),
         Value::Datetime(dt) => {
-            // TODO: proper DateTime support via chrono or similar
             let dt_str = dt.to_string();
             (quote! { &'static str }, quote! { #dt_str })
         },
         Value::Array(arr) => {
             if arr.is_empty() {
-                (quote! { &'static [&'static str] }, quote! { &[] })
+                return (quote! { &'static [&'static str] }, quote! { &[] });
+            }
+            let (types, values): (Vec<_>, Vec<_>) = arr.iter().map(convert_value_to_tokens).unzip();
+            // Compared as generated types rather than as toml variants, so two arrays that
+            // are both arrays but hold different element types count as different, and
+            // land in a tuple where an array of them would not compile.
+            let first = types[0].to_string();
+            let homogeneous = types.iter().all(|ty| ty.to_string() == first);
+            if homogeneous {
+                let elem_ty = &types[0];
+                (quote! { &'static [#elem_ty] }, quote! { &[#(#values),*] })
             } else {
-                // single-step recurse to get type and value for the first element
-                let (elem_ty, _) = convert_value_to_tokens(&arr[0]);
-                // check all elements are of the same variant as the first (should be the case for most use cases)
-                let same_type = arr
-                    .iter()
-                    .all(|v| std::mem::discriminant(v) == std::mem::discriminant(&arr[0]));
-                if same_type {
-                    let elems: Vec<_> = arr
-                        .iter()
-                        .map(|v| {
-                            let (_, val) = convert_value_to_tokens(v);
-                            val
-                        })
-                        .collect();
-                    (quote! { &'static [#elem_ty] }, quote! { &[#(#elems),*] })
-                } else {
-                    // fallback for mixed types
-                    let array_str = format!("{:?}", arr);
-                    (quote! { &'static str }, quote! { #array_str })
-                }
+                // A trailing comma in both, so a tuple of one is still a tuple. It cannot
+                // arise here, since one element is homogeneous with itself, but the
+                // spelling costs nothing and rules the case out.
+                (quote! { (#(#types,)*) }, quote! { (#(#values,)*) })
             }
         },
         _ => {
-            // fallback for unsupported types, are there any we should support?
             let val_str = format!("{}", value);
             (quote! { &'static str }, quote! { #val_str })
         },
     }
 }
 
-/// Converts a TOML `Value` to a string token representation.
-///
-/// String values are kept as-is, other types are converted to string form.
-#[inline]
-#[allow(dead_code)] // NOTE: useful api for future
-pub fn value_to_string_token(value: &Value) -> TokenStream2 {
-    match value {
-        Value::String(s) => quote! { #s },
-        _ => {
-            // render any value as string token
-            let s = value.to_string();
-            if s.contains("& ") {
-                // remove unnecessary space after ampersand if no lifetime
-                let s = s.replace("& ", "&");
-                quote! { #s }
-            } else {
-                // no processing required
-                quote! { #s }
-            }
-        },
-    }
-}
-
-/// Wraps a field's comment into a `#[doc = "..."]` attribute token.
-///
-/// Preserves the field's original comment formatting if available.
-///
-/// Returns empty tokens if the field has no comment.
+/// The `#[doc = "..."]` attribute carrying a field's comment, or nothing where it has none.
 #[inline]
 pub fn get_doc_comment(field: &TomlField) -> TokenStream2 {
-    // println!(" >> Figuring out the comment for field: {}", field.name);
-    let comment_maybe = field.comment.clone();
-    // let comment = comment_maybe.unwrap_or_default().replace("\n", "\n\n").replace("\\\n", "\n\n"); // proper newlines
-    let comment = comment_maybe.unwrap_or_default(); // TODO: actually let's try and parse empty comment lines as \n instead of above wholesale
-    let lit = LitStr::new(&comment, proc_macro2::Span::call_site());
-    if comment.is_empty() {
-        quote! {}
-    } else {
-        // println!("     >> It did have a comment! ({})", comment);
-        quote! {
-            #[doc = #lit]
-        }
+    match field.comment.as_deref() {
+        Some(comment) if !comment.is_empty() => {
+            let lit = LitStr::new(comment, proc_macro2::Span::call_site());
+            quote! { #[doc = #lit] }
+        },
+        _ => quote! {},
     }
 }
 
-/// Finds the workspace root by traversing upward from `CARGO_MANIFEST_DIR`.
+/// The workspace root, found by climbing from `CARGO_MANIFEST_DIR` to the first directory
+/// whose `Cargo.toml` opens a `[workspace]` table.
 ///
-/// Searches parent directories until it finds one with a Cargo.toml file
-/// that contains a `[workspace]` table. This allows finding the workspace
-/// root from any crate within the workspace.
-///
-/// # Returns
-/// Falls back to the original manifest directory if no workspace root is found.
+/// Falls back to the manifest directory itself where no ancestor is one, which is what a
+/// crate outside any workspace has for a root.
 #[cold]
 pub fn find_workspace_root() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let manifest_path = PathBuf::from(manifest_dir);
 
-    // search upwards for workspace root
     let mut path = manifest_path.clone();
-
     while !is_workspace_root(&path.join("Cargo.toml")) {
         if !path.pop() {
-            // fallback to pkg dir if no workspace found
             return manifest_path;
         }
     }
     path
 }
 
-/// Determines if a path contains a workspace Cargo.toml file.
-///
-/// Checks if the file exists, can be read as TOML, and contains
-/// a `[workspace]` table.
-/// # Parameters
-/// - `path`: Path to a potential Cargo.toml file
-///
-/// # Returns
-/// `true` if the path exists, can be read, parsed as TOML, and has a workspace table.
+/// Whether the manifest at `path` exists, parses, and opens a `[workspace]` table.
 #[cold]
 pub fn is_workspace_root(path: &Path) -> bool {
     if let Ok(content) = fs::read_to_string(path) {
@@ -153,50 +104,29 @@ pub fn is_workspace_root(path: &Path) -> bool {
     false
 }
 
-/// Converts a TOML key into a valid Rust identifier string.
-///
-/// Transformations applied:
-///
-/// 1. Strips surrounding quotes if present
-/// 2. Replaces dashes with underscores (kebab-case to snake_case)
-/// 3. Returns `ROOT` constant for empty input
-///
-/// # Parameters
-/// - `input`: Raw TOML key to normalize
+/// A toml key as a Rust identifier: surrounding quotes stripped, dashes made underscores,
+/// and the empty key as [`ROOT`].
 #[inline]
 pub fn to_valid_ident(input: &str) -> String {
-    // handle potentially somehow still quoted keys by removing quotes
     let i = input.trim_start_matches('"').trim_end_matches('"');
-    // empty input handling
     if i.is_empty() {
-        return ROOT.to_string(); // default name
+        return ROOT.to_string();
     }
     kebab_to_snake(i)
 }
 
-/// Converts kebab-case to snake_case by replacing all dashes with underscores.
-///
-/// # Parameters
-/// - `input`: String potentially containing dashes
-///
-/// Used for converting kebab-case to snake_case in toml keys.
+/// kebab-case to snake_case, which is every dash made an underscore.
 #[inline]
 pub fn kebab_to_snake(input: &str) -> String {
-    // TODO: more sophisticated conversion and covering edge cases that I assume have to exist
     input.replace('-', "_")
 }
 
-/// Converts snake_case to kebab-case by replacing all underscores with dashes.
-///
-/// # Parameters
-/// - `input`: String potentially containing underscores
-///
-/// Used for converting snake_case to kebab-case in TOML keys.
+/// snake_case to kebab-case, the inverse, for looking a normalised path up in the comments
+/// read from the toml, which keep the keys as written.
 #[inline]
 pub fn snake_to_kebab(input: &str) -> String {
     input.replace('_', "-")
 }
-// TODO: unit test for `snake_to_kebab`, but in practice unless we expand or add to this, it should do what it says on the tin
 
 #[cfg(test)]
 mod tests {
@@ -206,17 +136,6 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
     use toml::Value;
-
-    // NOTE: the escaped quotes for string values are expected, because they need to be
-    //       string literals in the generated code
-    // FIXME: make this make more sense, the above note alone tells me this smells
-    fn escaped(s: &str) -> String {
-        if s.starts_with("\"") {
-            // already escaped
-            return s.to_string();
-        }
-        format!("\"{}\"", s)
-    }
 
     #[test]
     fn test_string_value_conversion() {
@@ -288,38 +207,46 @@ mod tests {
     }
 
     #[test]
-    fn test_mixed_array_fallback() {
+    fn a_mixed_array_becomes_a_tuple() {
         let mixed = Value::Array(vec![Value::String("a".into()), Value::Integer(1)]);
         let (ty, val) = convert_value_to_tokens(&mixed);
-        assert_eq!(ty.to_string(), "& 'static str");
-        // debug representation of mixed array
-        // NOTE: when a str value converts to a token, it gets escaped on display
-        //       unsure whether or not this should be thus, or we should make it more sensible?
-        let pat = format!("[String(\\\"{}\\\"), Integer({})]", "a", 1);
-        assert!(
-            val.to_string().contains(&pat),
-            "{}, should contain: {}",
-            val,
-            pat
-        );
+        assert_eq!(ty.to_string(), "(& 'static str , i64 ,)");
+        assert_eq!(val.to_string(), "(\"a\" , 1i64 ,)");
     }
 
     #[test]
-    fn test_value_to_string_token() {
-        let str_val = Value::String("hello".into());
-        assert_eq!(
-            value_to_string_token(&str_val).to_string(),
-            escaped("hello")
-        );
+    fn an_array_of_arrays_is_an_array_where_the_inner_shapes_agree() {
+        let rows = Value::Array(vec![
+            Value::Array(vec![Value::Integer(1), Value::Integer(2)]),
+            Value::Array(vec![Value::Integer(3)]),
+        ]);
+        let (ty, _) = convert_value_to_tokens(&rows);
+        assert_eq!(ty.to_string(), "& 'static [& 'static [i64]]");
+    }
 
-        let int_val = Value::Integer(42);
-        // non-string values get quoted in string token output
-        assert_eq!(value_to_string_token(&int_val).to_string(), escaped("42"));
-        let bool_val = Value::Boolean(true);
+    #[test]
+    fn an_array_of_arrays_is_a_tuple_where_the_inner_shapes_differ() {
+        // Both elements are arrays, so a check on the toml variant alone would file this as
+        // homogeneous and generate a slice whose elements have two different types, which
+        // fails to compile in the consumer with an error pointing at the macro.
+        let rows = Value::Array(vec![
+            Value::Array(vec![Value::Integer(1), Value::String("a".into())]),
+            Value::Array(vec![Value::Integer(3)]),
+        ]);
+        let (ty, val) = convert_value_to_tokens(&rows);
+        // The mixed inner array is itself a tuple, and the other stays a slice.
         assert_eq!(
-            value_to_string_token(&bool_val).to_string(),
-            escaped("true")
+            ty.to_string(),
+            "((i64 , & 'static str ,) , & 'static [i64] ,)"
         );
+        assert_eq!(val.to_string(), "((1i64 , \"a\" ,) , & [3i64] ,)");
+    }
+
+    #[test]
+    fn snake_and_kebab_are_inverses_over_the_keys_that_use_them() {
+        assert_eq!(snake_to_kebab("with_dash"), "with-dash");
+        assert_eq!(kebab_to_snake(&snake_to_kebab("with_dash")), "with_dash");
+        assert_eq!(snake_to_kebab("plain"), "plain");
     }
 
     #[test]

@@ -35,6 +35,11 @@ number = 42
 float = 3.14
 bool = true
 array = [1, 2, 3]
+# an array holding more than one type is a tuple, one position per element
+tuple = [1, "one", 1.5, true]
+rows = [[1, 2], [3, 4]]
+ragged = [[1, "a"], [2]]
+url = "https://example.test/#fragment" # the hash in the value is not a comment
 
 # kebab-case sections in the toml should properly transform to snake_case, AND also retain the
 # comments they have!

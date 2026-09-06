@@ -17,6 +17,7 @@ use syn::{parse_macro_input, LitStr};
 
 mod comments;
 mod field;
+mod fields;
 mod input;
 mod module;
 mod pattern;

@@ -95,6 +95,19 @@ fn test_generated_file_constants() {
     assert_eq!(mixed::ARRAY[1], 2);
     assert_eq!(mixed::ARRAY[2], 3);
     const { assert!(mixed::BOOL) };
+
+    // An array holding more than one type is a tuple, one position per element, so each
+    // element keeps its own type rather than all of them collapsing to a string.
+    let (count, word, ratio, flag): (i64, &str, f64, bool) = mixed::TUPLE;
+    assert_eq!((count, word, ratio, flag), (1, "one", 1.5, true));
+    // Arrays of arrays stay arrays where every row has the same shape, and become a tuple
+    // where the rows differ, since a slice cannot hold two element types. The mixed row
+    // is itself a tuple, by the same rule one level down.
+    assert_eq!(mixed::ROWS, &[&[1, 2][..], &[3, 4][..]]);
+    let (first, second): ((i64, &str), &[i64]) = mixed::RAGGED;
+    assert_eq!(first, (1, "a"));
+    assert_eq!(second, &[2]);
+    assert_eq!(mixed::URL, "https://example.test/#fragment");
     assert_eq!(mixed::WITH_DASH, "dashed");
     assert_eq!(mixed::WITH_UNDERSCORE, "underscore");
     assert_eq!(mixed::quoted::KEY, "quoted");

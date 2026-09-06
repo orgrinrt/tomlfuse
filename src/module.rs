@@ -5,7 +5,7 @@
 //------------------------------------------------------------------------------
 
 use crate::comments::extract_comments;
-use crate::field::TomlFields;
+use crate::fields::TomlFields;
 use crate::pattern::Pattern;
 use crate::utils;
 use globset::{Glob, GlobSetBuilder};
@@ -120,52 +120,35 @@ pub struct RootModuleSource {
     pub resolved_path: Option<PathBuf>,
 }
 
-/// Root module that generates code from TOML data.
+/// One section of a binding: its configuration, and the parsed document it reads.
 ///
-/// Combines the configuration from `RootModuleSource` with parsed TOML data
-/// to generate a Rust module with constants reflecting the TOML structure.
-///
+/// Owns the document, and builds the [`TomlFields`] that borrow it when the tokens are
+/// generated. It used to hold both at once, which needed the document to outlive the
+/// struct holding it, and the way that was arranged was a `Box::leak` per section.
 #[derive(Clone, Debug)]
-pub struct RootModule<'a> {
+pub struct RootModule {
     /// Source configuration from macro input
     pub source: RootModuleSource,
     pub toml: Value,
-    pub fields: TomlFields<'a>,
 }
 
-impl<'a> RootModule<'a> {
-    pub fn new(mut source: RootModuleSource, toml_path: &'a str) -> Self {
-        // attempt to read the TOML file from:
-        // 1. direct path
-        // 2. relative to workspace root
-        // 3. relative to CARGO_MANIFEST_DIR
-        //
-        // this allows for flexibility in specifying the TOML path while
-        // still providing reasonable defaults without requiring absolute paths
-        // for common scenarios like referencing Cargo.toml
+impl RootModule {
+    /// Reads and parses the toml, extracts its comments, and records where it was found.
+    pub fn new(mut source: RootModuleSource, toml_path: &str) -> Self {
         let (resolved, toml_raw) = resolve_toml(toml_path);
-        let toml: Value = toml_raw
-            .parse()
-            .unwrap_or_else(|_| panic!("Failed to parse toml file: {}", toml_path));
+        let toml: Value = toml_raw.parse().unwrap_or_else(|e| {
+            panic!("tomlfuse: `{}` is not valid toml. {e}", resolved.display())
+        });
         source.comments = extract_comments(&toml_raw);
         source.resolved_path = Some(resolved);
-        RootModule::from(source).with_toml(toml).build()
-    }
-
-    /// Sets the parsed TOML value for this module.
-    pub fn with_toml(self, toml: Value) -> Self {
         RootModule {
+            source,
             toml,
-            ..self
         }
     }
 
-    /// Builds the final module by applying patterns and extracting fields.
-    ///
-    /// This method:
-    /// 1. Converts patterns to glob matchers
-    /// 2. Extracts fields matching the patterns from the TOML data
-    pub fn build(self) -> Self {
+    /// Compiles the patterns and selects the fields they match out of the document.
+    fn fields(&self) -> TomlFields<'_> {
         let mut inclusions = GlobSetBuilder::new();
         let mut exclusions = GlobSetBuilder::new();
         let mut literals: Vec<String> = Vec::new();
@@ -180,7 +163,7 @@ impl<'a> RootModule<'a> {
             exclusions.add(compile_glob(pattern));
             literals.push(format!("!{}", pattern));
         }
-        let fields = TomlFields::from(self.toml.clone())
+        TomlFields::from(&self.toml)
             .with_inclusion_globs(Some(
                 inclusions
                     .build()
@@ -192,37 +175,9 @@ impl<'a> RootModule<'a> {
                     .expect("Expected a succesful glob set build"),
             ))
             .with_pat_literals(literals)
-            .with_comments(
-                self.source
-                    .comments
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            )
-            .with_aliases(Some(self.source.aliases.clone()));
-        RootModule {
-            fields: fields.build(),
-            ..self
-        }
-    }
-}
-
-impl<'a> From<RootModuleSource> for RootModule<'a> {
-    fn from(source: RootModuleSource) -> Self {
-        RootModule {
-            source,
-            toml: Value::Table(Default::default()),
-            fields: TomlFields::new(),
-        }
-    }
-}
-impl<'a> From<&'a RootModuleSource> for RootModule<'a> {
-    fn from(source: &'a RootModuleSource) -> Self {
-        RootModule {
-            source: source.clone(),
-            toml: Value::Table(Default::default()),
-            fields: TomlFields::new(),
-        }
+            .with_comments(self.source.comments.clone())
+            .with_aliases(Some(self.source.aliases.clone()))
+            .build()
     }
 }
 
@@ -263,9 +218,9 @@ impl Parse for RootModuleSource {
     }
 }
 
-impl<'a> ToTokens for RootModule<'a> {
+impl ToTokens for RootModule {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let fields = &self.fields;
+        let fields = self.fields();
         let root_mod_name = &self.source.name;
 
         // Register the toml with cargo, so that editing it rebuilds what was generated
