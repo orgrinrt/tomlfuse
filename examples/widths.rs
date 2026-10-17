@@ -38,15 +38,14 @@ file! {
     // And one width can cover several keys.
     [limits]
     limits.*: u64
-
-    // Rows of three channels come out as `[[u8; 3]; 4]`, with both lengths read from the file.
-    // A fifth row in the file makes it a `[[u8; 3]; 5]`, and a row with two channels is an
-    // error, since a fixed array has one length.
 }
 
 file! {
     "examples/palette.toml"
 
+    // Rows of three channels come out as `[[u8; 3]; 4]`, with both lengths read from the file.
+    // A fifth row in the file makes it a `[[u8; 3]; 5]`, and a row with two channels is an
+    // error, since a fixed array has one length.
     [colours]
     palette.world: u8
 }
