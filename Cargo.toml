@@ -37,8 +37,9 @@ default = []
 # `core`. Every value becomes a `pub const` of `&'static str`, `bool`, an integer or a float
 # (`i64` and `f64` unless the macro input names one of the other eight widths), `&'static [T]`
 # of those, or `[T; N]` where a width turns an array into a fixed one, wrapped in `pub mod`
-# and doc comments, plus one `include_bytes!` that binds the toml as a build input. None of that is `std`, so a `#![no_std]` consumer with no allocator
-# gets working constants today and got them before this feature existed.
+# and doc comments, plus one `include_bytes!` that binds the toml as a build input. None of
+# that is `std`, so a `#![no_std]` consumer with no allocator gets working constants today
+# and got them before this feature existed.
 #
 # Nothing in `src/` reads the flag, because there is nothing to switch. It exists so a
 # workspace that turns `no_std` on across every dependency can name it here without the

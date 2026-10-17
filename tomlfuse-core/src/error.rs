@@ -39,7 +39,6 @@ pub enum Error {
         /// What the glob compiler objected to.
         reason: String,
     },
-    /// The environment a cargo-relative lookup needs is not there.
     /// A width was given to a pattern that has no number in the file to apply it to.
     UnusedWidth {
         /// The pattern as written.
@@ -50,6 +49,7 @@ pub enum Error {
         /// shallow to reach a number. Otherwise it matches nothing at all.
         only_tables: bool,
     },
+    /// The environment a cargo-relative lookup needs is not there.
     NotUnderCargo {
         /// The variable that was missing.
         variable: &'static str,
