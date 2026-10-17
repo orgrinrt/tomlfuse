@@ -28,7 +28,11 @@ use std::time::Duration;
 
 /// Where the consumer lives. Under the build directory, so `cargo clean` takes it too.
 fn consumer_root(name: &str) -> PathBuf {
-    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/target/rebuild-consumers")).join(name)
+    PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/target/rebuild-consumers"
+    ))
+    .join(name)
 }
 
 /// Writes the consumer, which prints the one constant it binds.
@@ -71,8 +75,11 @@ fn main() {
 }
 
 fn write_toml(root: &Path, value: i64) {
-    fs::write(root.join("value.toml"), format!("[settings]\nvalue = {value}\n"))
-        .expect("the consumer toml");
+    fs::write(
+        root.join("value.toml"),
+        format!("[settings]\nvalue = {value}\n"),
+    )
+    .expect("the consumer toml");
 }
 
 /// Builds and runs the consumer, returning what it printed.

@@ -211,7 +211,10 @@ mod tests {
     #[test]
     fn test_string_value_tokens() {
         assert_eq!(ty(&Ty::Str).to_string(), "& 'static str");
-        assert_eq!(lit(&Ty::Str, &Lit::Str("test".into())).to_string(), "\"test\"");
+        assert_eq!(
+            lit(&Ty::Str, &Lit::Str("test".into())).to_string(),
+            "\"test\""
+        );
     }
 
     #[test]
@@ -222,7 +225,9 @@ mod tests {
         assert_eq!(lit(&i64_ty, &Lit::Int(42)).to_string(), "42i64");
         let f64_ty = Ty::Float(FloatTy::F64);
         assert_eq!(ty(&f64_ty).to_string(), "f64");
-        assert!(lit(&f64_ty, &Lit::Float(std::f64::consts::PI)).to_string().starts_with("3.14"));
+        assert!(lit(&f64_ty, &Lit::Float(std::f64::consts::PI))
+            .to_string()
+            .starts_with("3.14"));
     }
 
     #[test]
@@ -237,18 +242,27 @@ mod tests {
             (IntTy::U64, "u64"),
         ] {
             assert_eq!(ty(&Ty::Int(int)).to_string(), name);
-            assert_eq!(lit(&Ty::Int(int), &Lit::Int(7)).to_string(), format!("7{name}"));
+            assert_eq!(
+                lit(&Ty::Int(int), &Lit::Int(7)).to_string(),
+                format!("7{name}")
+            );
         }
         assert_eq!(lit(&Ty::Int(IntTy::I8), &Lit::Int(-5)).to_string(), "- 5i8");
         assert_eq!(ty(&Ty::Float(FloatTy::F32)).to_string(), "f32");
-        assert_eq!(lit(&Ty::Float(FloatTy::F32), &Lit::Float(0.5)).to_string(), "0.5f32");
+        assert_eq!(
+            lit(&Ty::Float(FloatTy::F32), &Lit::Float(0.5)).to_string(),
+            "0.5f32"
+        );
     }
 
     #[test]
     fn a_list_gives_its_elements_the_element_type() {
         let list = Ty::Slice(Box::new(Ty::Int(IntTy::U8)));
         assert_eq!(ty(&list).to_string(), "& 'static [u8]");
-        assert_eq!(lit(&list, &Lit::List(vec![Lit::Int(1), Lit::Int(2)])).to_string(), "& [1u8 , 2u8]");
+        assert_eq!(
+            lit(&list, &Lit::List(vec![Lit::Int(1), Lit::Int(2)])).to_string(),
+            "& [1u8 , 2u8]"
+        );
     }
 
     #[test]
@@ -262,7 +276,11 @@ mod tests {
     fn test_array_tokens() {
         let strings = Ty::Slice(Box::new(Ty::Str));
         assert_eq!(ty(&strings).to_string(), "& 'static [& 'static str]");
-        let list = lit(&strings, &Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())])).to_string();
+        let list = lit(
+            &strings,
+            &Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())]),
+        )
+        .to_string();
         assert!(list.contains("\"a\""));
         assert!(list.contains("\"b\""));
         // this is proper form because tokens display with space delims

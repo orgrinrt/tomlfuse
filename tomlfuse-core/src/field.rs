@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::model::{Const, Module, Width};
 use crate::error::Problem;
+use crate::model::{Const, Module, Width};
 use crate::names::{join_key, snake_to_kebab, to_valid_ident};
 use crate::pattern::Pattern;
 use crate::value::bind_value;
@@ -691,7 +691,9 @@ impl<'a> TomlFields<'a> {
         // constants for this module
         let mut consts = Vec::new();
         for f in relative_children_fields.iter().filter(|f| !f.is_table()) {
-            let bound = self.width_of(f).and_then(|width| bind_value(&f.key, f.value, width));
+            let bound = self
+                .width_of(f)
+                .and_then(|width| bind_value(&f.key, f.value, width));
             match bound {
                 Ok((ty, value)) => consts.push(Const {
                     name: to_valid_ident(&f.name).to_uppercase(),

@@ -42,8 +42,16 @@ impl RootModuleSource {
             name: self.name.to_string(),
             include: self.inclusion_pats.iter().map(core).collect(),
             exclude: self.exclusion_pats.iter().map(core).collect(),
-            aliases: self.aliases.iter().map(|(alias, orig)| (core(alias), core(orig))).collect(),
-            widths: self.widths.iter().map(|(pattern, width)| (core(pattern), *width)).collect(),
+            aliases: self
+                .aliases
+                .iter()
+                .map(|(alias, orig)| (core(alias), core(orig)))
+                .collect(),
+            widths: self
+                .widths
+                .iter()
+                .map(|(pattern, width)| (core(pattern), *width))
+                .collect(),
         }
     }
 }
@@ -58,7 +66,10 @@ fn parse_width(input: ParseStream) -> SynResult<Option<Width>> {
     Width::parse(&name.to_string()).map(Some).ok_or_else(|| {
         syn::Error::new(
             name.span(),
-            format!("tomlfuse: `{name}` is not a width. Use one of {}.", Width::NAMES.join(", ")),
+            format!(
+                "tomlfuse: `{name}` is not a width. Use one of {}.",
+                Width::NAMES.join(", ")
+            ),
         )
     })
 }
@@ -88,7 +99,9 @@ impl Parse for RootModuleSource {
                 let _negation: Token![!] = input.parse()?;
                 let pattern = Pattern::parse(input)?;
                 if input.peek(Token![:]) {
-                    return Err(input.error("an exclusion leaves keys out, so there is nothing to give a width to"));
+                    return Err(input.error(
+                        "an exclusion leaves keys out, so there is nothing to give a width to",
+                    ));
                 }
                 exclusion_pats.push(pattern)
             } else {

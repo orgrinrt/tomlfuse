@@ -93,7 +93,10 @@ fn a_binding_leaves_out_what_the_pattern_excludes() {
 
     let destination = scratch_crate().join("tests/ui");
     fs::create_dir_all(&destination).expect("the scratch fixture directory");
-    for fixture in fs::read_dir(&ui).expect("tests/ui is readable").filter_map(|e| e.ok()) {
+    for fixture in fs::read_dir(&ui)
+        .expect("tests/ui is readable")
+        .filter_map(|e| e.ok())
+    {
         let path = fixture.path();
         if path.extension().is_some_and(|e| e == "toml") {
             fs::copy(&path, destination.join(fixture.file_name()))

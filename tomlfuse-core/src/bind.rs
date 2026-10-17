@@ -64,7 +64,11 @@ pub fn bind(source: &Source, section: &Section) -> Result<Bound, Error> {
     }
     let build_set = |builder: GlobSetBuilder, patterns: &[Pattern]| {
         builder.build().map_err(|e| Error::BadPattern {
-            pattern: patterns.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
+            pattern: patterns
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
             reason: e.to_string(),
         })
     };
@@ -119,9 +123,17 @@ mod tests {
 
         let bound = bind(&source, &section(&["row.*"])).unwrap();
 
-        let names: Vec<_> = bound.module.consts.iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<_> = bound
+            .module
+            .consts
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
         assert_eq!(names.len(), 2, "{names:?}");
-        assert!(names.contains(&"FINE") && names.contains(&"ALSO_FINE"), "{names:?}");
+        assert!(
+            names.contains(&"FINE") && names.contains(&"ALSO_FINE"),
+            "{names:?}"
+        );
 
         let mut keys: Vec<_> = bound.problems.iter().map(|p| p.key.as_str()).collect();
         keys.sort();
@@ -160,14 +172,28 @@ mod tests {
     }
 
     fn ty_of(bound: &Bound, name: &str) -> Ty {
-        bound.module.consts.iter().find(|c| c.name == name).unwrap().ty.clone()
+        bound
+            .module
+            .consts
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .ty
+            .clone()
     }
 
     #[test]
     fn a_width_reaches_the_keys_its_pattern_matches_and_no_others() {
         let source = source("[size]\nvoxel = 17\nframes = 30\nratio = 0.5\n");
 
-        let bound = bind(&source, &at(&[("size.{voxel,frames}", "u8"), ("size.ratio", "f32")], &["size.*"])).unwrap();
+        let bound = bind(
+            &source,
+            &at(
+                &[("size.{voxel,frames}", "u8"), ("size.ratio", "f32")],
+                &["size.*"],
+            ),
+        )
+        .unwrap();
 
         assert!(bound.problems.is_empty(), "{:?}", bound.problems);
         assert_eq!(ty_of(&bound, "VOXEL"), Ty::Int(IntTy::U8));
@@ -192,7 +218,9 @@ mod tests {
     fn an_alias_takes_the_width_given_for_the_original() {
         let source = source("[size]\nvoxel = 17\n");
         let mut section = at(&[("size.voxel", "u16")], &[]);
-        section.aliases.insert(Pattern::new("px"), Pattern::new("size.voxel"));
+        section
+            .aliases
+            .insert(Pattern::new("px"), Pattern::new("size.voxel"));
 
         let bound = bind(&source, &section).unwrap();
 
@@ -204,7 +232,11 @@ mod tests {
     fn two_different_widths_for_one_key_are_a_problem_and_the_same_one_twice_is_not() {
         let source = source("[size]\nvoxel = 17\n");
 
-        let bound = bind(&source, &at(&[("size.*", "u8"), ("size.voxel", "u32")], &["size.*"])).unwrap();
+        let bound = bind(
+            &source,
+            &at(&[("size.*", "u8"), ("size.voxel", "u32")], &["size.*"]),
+        )
+        .unwrap();
         assert_eq!(bound.problems.len(), 1);
         assert_eq!(bound.problems[0].key, "size.voxel");
         assert_eq!(
@@ -213,7 +245,11 @@ mod tests {
         );
         assert!(bound.module.consts.is_empty());
 
-        let bound = bind(&source, &at(&[("size.*", "u8"), ("size.voxel", "u8")], &["size.*"])).unwrap();
+        let bound = bind(
+            &source,
+            &at(&[("size.*", "u8"), ("size.voxel", "u8")], &["size.*"]),
+        )
+        .unwrap();
         assert!(bound.problems.is_empty(), "{:?}", bound.problems);
     }
 }

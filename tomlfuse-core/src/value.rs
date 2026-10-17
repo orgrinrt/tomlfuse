@@ -62,9 +62,13 @@ fn merge(a: Shape, b: Shape) -> Result<Shape, Clash> {
         (Shape::List(None), Shape::List(other)) | (Shape::List(other), Shape::List(None)) => {
             Ok(Shape::List(other))
         },
-        (Shape::List(Some(a)), Shape::List(Some(b))) => Ok(Shape::List(Some(Box::new(merge(*a, *b)?)))),
+        (Shape::List(Some(a)), Shape::List(Some(b))) => {
+            Ok(Shape::List(Some(Box::new(merge(*a, *b)?))))
+        },
         (Shape::Array(_, a), Shape::Array(_, b)) if a != b => Err(Clash::Lengths(a, b)),
-        (Shape::Array(a, len), Shape::Array(b, _)) => Ok(Shape::Array(Box::new(merge(*a, *b)?), len)),
+        (Shape::Array(a, len), Shape::Array(b, _)) => {
+            Ok(Shape::Array(Box::new(merge(*a, *b)?), len))
+        },
         (a, b) => Err(Clash::Kinds(a.kind(), b.kind())),
     }
 }
@@ -79,19 +83,16 @@ fn refuse(key: &str, reason: impl Into<String>) -> Problem {
 /// Converts a toml `Value` into the type it binds as and the value it binds to.
 ///
 /// Supports strings, integers, floats, booleans and arrays of one kind, which may be arrays
-/// in turn, which are slices, or fixed arrays when `width` is given. An integer is bound as `i64` and a float as `f64` unless `width` names another
-/// type, which every number in the value is then bound as, and which a number that does not
-/// fit is a [`Problem`] for. Anything else has no constant to bind as and is a [`Problem`]
-/// naming `key`: an
-/// array of mixed kinds, a table inside an array, and a datetime. They used to be bound as
-/// the text of their `Debug` or `Display` output, so a row that was meant to be a record
-/// built into a string, and failed, or did not, wherever it was read.
+/// in turn. An array is a slice, or a fixed array when `width` is given.
+///
+/// An integer is bound as `i64` and a float as `f64` unless `width` names another type,
+/// which every number in the value is then bound as, and which a number that does not fit
+/// is a [`Problem`] for. Anything else has no constant to bind as and is a [`Problem`]
+/// naming `key`: an array of mixed kinds, a table inside an array, and a datetime. They used
+/// to be bound as the text of their `Debug` or `Display` output, so a row that was meant to
+/// be a record built into a string, and failed, or did not, wherever it was read.
 #[cold]
-pub fn bind_value(
-    key: &str,
-    value: &Value,
-    width: Option<Width>,
-) -> Result<(Ty, Lit), Problem> {
+pub fn bind_value(key: &str, value: &Value, width: Option<Width>) -> Result<(Ty, Lit), Problem> {
     let (shape, lit) = shaped(key, value, width)?;
     Ok((shape.into_ty(), lit))
 }
@@ -101,7 +102,10 @@ pub fn bind_value(
 fn not_a_number(key: &str, kind: &str, width: Width) -> Problem {
     refuse(
         key,
-        format!("is {kind}, and the width `{}` applies to integers and floats only.", width.name()),
+        format!(
+            "is {kind}, and the width `{}` applies to integers and floats only.",
+            width.name()
+        ),
     )
 }
 
@@ -228,7 +232,11 @@ mod tests {
     /// The same at a width.
     fn bound_at(text: &str, width: Option<&str>) -> Result<(Ty, Lit), Problem> {
         let parsed: Value = format!("value = {text}").parse().unwrap();
-        bind_value("value", parsed.get("value").unwrap(), width.map(|w| Width::parse(w).unwrap()))
+        bind_value(
+            "value",
+            parsed.get("value").unwrap(),
+            width.map(|w| Width::parse(w).unwrap()),
+        )
     }
 
     const INT: Ty = Ty::Int(IntTy::I64);
@@ -266,7 +274,10 @@ mod tests {
     fn test_homogeneous_array() {
         let (ty, val) = bound(r#"["a", "b"]"#).unwrap();
         assert_eq!(ty, slice(Ty::Str));
-        assert_eq!(val, Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())]));
+        assert_eq!(
+            val,
+            Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())])
+        );
     }
 
     #[test]
@@ -299,7 +310,10 @@ mod tests {
         assert_eq!(err.key, "value");
         assert!(err.reason.contains("an integer and a string"), "{err}");
         // Two numbers of different kinds are still two kinds.
-        assert!(bound("[1, 2.5]").unwrap_err().reason.contains("an integer and a float"));
+        assert!(bound("[1, 2.5]")
+            .unwrap_err()
+            .reason
+            .contains("an integer and a float"));
     }
 
     #[test]
@@ -373,8 +387,14 @@ mod tests {
 
     #[test]
     fn a_float_binds_at_the_width_named_and_a_float_too_large_does_not_fit() {
-        assert_eq!(bound_at("0.5", Some("f32")).unwrap().0, Ty::Float(FloatTy::F32));
-        assert_eq!(bound_at("1e300", Some("f64")).unwrap().0, Ty::Float(FloatTy::F64));
+        assert_eq!(
+            bound_at("0.5", Some("f32")).unwrap().0,
+            Ty::Float(FloatTy::F32)
+        );
+        assert_eq!(
+            bound_at("1e300", Some("f64")).unwrap().0,
+            Ty::Float(FloatTy::F64)
+        );
         assert!(bound_at("3.4028234e38", Some("f32")).is_ok());
         assert!(bound_at("-3.4028234e38", Some("f32")).is_ok());
 
@@ -393,13 +413,20 @@ mod tests {
         let err = bound_at("0.5", Some("u8")).unwrap_err();
         assert_eq!(err.reason, "is a float, and `u8` is an integer type.");
         let err = bound_at("3", Some("f32")).unwrap_err();
-        assert!(err.reason.starts_with("is an integer, and `f32` is a float type."), "{err}");
+        assert!(
+            err.reason
+                .starts_with("is an integer, and `f32` is a float type."),
+            "{err}"
+        );
     }
 
     #[test]
     fn a_width_on_anything_but_a_number_is_refused() {
         let err = bound_at(r#""text""#, Some("u32")).unwrap_err();
-        assert_eq!(err.reason, "is a string, and the width `u32` applies to integers and floats only.");
+        assert_eq!(
+            err.reason,
+            "is a string, and the width `u32` applies to integers and floats only."
+        );
         let err = bound_at("true", Some("u32")).unwrap_err();
         assert!(err.reason.starts_with("is a boolean"), "{err}");
     }
@@ -435,15 +462,25 @@ mod tests {
 
     #[test]
     fn an_empty_array_with_a_width_is_an_empty_array_of_the_width() {
-        assert_eq!(bound_at("[]", Some("u8")).unwrap().0, array(Ty::Int(IntTy::U8), 0));
-        assert_eq!(bound_at("[[], []]", Some("f32")).unwrap().0, array(array(Ty::Float(FloatTy::F32), 0), 2));
+        assert_eq!(
+            bound_at("[]", Some("u8")).unwrap().0,
+            array(Ty::Int(IntTy::U8), 0)
+        );
+        assert_eq!(
+            bound_at("[[], []]", Some("f32")).unwrap().0,
+            array(array(Ty::Float(FloatTy::F32), 0), 2)
+        );
     }
 
     #[test]
     fn rows_of_different_lengths_cannot_be_a_fixed_array() {
         let err = bound_at("[[1, 2, 3], [4, 5]]", Some("u8")).unwrap_err();
         assert_eq!(err.key, "value");
-        assert!(err.reason.starts_with("holds arrays of different lengths, 3 and 2 (at [1])."), "{err}");
+        assert!(
+            err.reason
+                .starts_with("holds arrays of different lengths, 3 and 2 (at [1])."),
+            "{err}"
+        );
 
         // An empty row is a row of another length, not a gap to be filled in.
         assert!(bound_at("[[], [1]]", Some("u8")).is_err());

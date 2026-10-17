@@ -54,11 +54,12 @@ impl Source {
     /// which parses as an empty toml and generates an empty module. A mistyped path was
     /// therefore silent.
     pub fn locate(toml_path: &str) -> Result<Source, Error> {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|_| {
-            Error::NotUnderCargo {
-                variable: "CARGO_MANIFEST_DIR",
-            }
-        })?);
+        let manifest_dir =
+            PathBuf::from(
+                env::var("CARGO_MANIFEST_DIR").map_err(|_| Error::NotUnderCargo {
+                    variable: "CARGO_MANIFEST_DIR",
+                })?,
+            );
 
         // Relative to the crate first, then to the workspace. Not relative to the current
         // directory, which this used to try before either: a proc macro runs inside the compiler
@@ -241,8 +242,14 @@ mod tests {
         let source = Source::read(&file)?;
 
         assert_eq!(source.path(), file);
-        assert_eq!(source.value().get("value").and_then(Value::as_integer), Some(42));
-        assert_eq!(source.comments().get("value"), Some(&"the answer".to_string()));
+        assert_eq!(
+            source.value().get("value").and_then(Value::as_integer),
+            Some(42)
+        );
+        assert_eq!(
+            source.comments().get("value"),
+            Some(&"the answer".to_string())
+        );
         Ok(())
     }
 
@@ -251,7 +258,10 @@ mod tests {
         let err = Source::parse("bad.toml", "bad.toml".into(), "ok = 1\nbad = = 2\n").unwrap_err();
         let message = err.to_string();
 
-        assert!(message.contains("bad.toml"), "the message does not name the file:\n{message}");
+        assert!(
+            message.contains("bad.toml"),
+            "the message does not name the file:\n{message}"
+        );
         assert!(
             message.contains("line 2, column 7"),
             "the message drops the position the parser reported:\n{message}"

@@ -83,7 +83,11 @@ impl Display for Error {
             Error::Unparseable {
                 given,
                 source,
-            } => write!(f, "tomlfuse: could not parse `{given}`:\n{}", source.to_string().trim_end()),
+            } => write!(
+                f,
+                "tomlfuse: could not parse `{given}`:\n{}",
+                source.to_string().trim_end()
+            ),
             Error::BadPattern {
                 pattern,
                 reason,

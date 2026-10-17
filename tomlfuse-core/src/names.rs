@@ -58,7 +58,9 @@ pub fn snake_to_kebab(input: &str) -> String {
 /// longer say whether a key had a dash.
 pub fn join_key(parent: &str, key: &str) -> String {
     let bare = !key.is_empty()
-        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
     let segment = if bare {
         key.to_string()
     } else {

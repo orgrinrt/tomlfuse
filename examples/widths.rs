@@ -64,7 +64,10 @@ fn main() {
     println!("port {port}, timeout {timeout}s");
     println!("sampling {sample_rate}");
     println!("pool of {pool}");
-    println!("bodies up to {body} bytes, {} connections", limits::MAX_CONNECTIONS);
+    println!(
+        "bodies up to {body} bytes, {} connections",
+        limits::MAX_CONNECTIONS
+    );
     for (i, [r, g, b]) in world.into_iter().enumerate() {
         println!("colour {i} is #{r:02x}{g:02x}{b:02x}");
     }
