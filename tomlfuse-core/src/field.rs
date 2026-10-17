@@ -4,15 +4,14 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::get_doc_comment;
+use crate::model::{Const, Module};
+use crate::names::{snake_to_kebab, to_valid_ident};
 use crate::pattern::Pattern;
-use crate::utils::{convert_value_to_tokens, snake_to_kebab, to_valid_ident};
+use crate::value::bind_value;
 use globset::GlobSet;
-use once_cell::sync::Lazy;
-use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote, ToTokens};
 use std::collections::HashMap;
 use std::string::ToString;
+use std::sync::LazyLock;
 use toml::Value;
 
 pub const ROOT: &str = "";
@@ -45,7 +44,7 @@ pub struct TomlField<'a> {
 
 impl Default for TomlField<'_> {
     fn default() -> Self {
-        static DEFAULT_VALUE: Lazy<Value> = Lazy::new(|| Value::from(""));
+        static DEFAULT_VALUE: LazyLock<Value> = LazyLock::new(|| Value::from(""));
 
         TomlField {
             name: String::default(),
@@ -217,7 +216,7 @@ impl Patterns {
 /// 5. Generating the Rust module structure
 ///
 /// Fields can be accessed by index, name, or parent-child relationships.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 // TODO: should probably rethink the name to better signal what it is. `ModuleImpl` maybe?
 pub struct TomlFields<'a> {
     pub root_value: Option<&'a Value>,
@@ -228,13 +227,7 @@ pub struct TomlFields<'a> {
 }
 impl<'a> TomlFields<'a> {
     pub fn new() -> Self {
-        TomlFields {
-            root_value: None,
-            fields: Vec::new(),
-            patterns: Patterns::new(),
-            aliases: None,
-            comments: None,
-        }
+        TomlFields::default()
     }
 
     /// Builds the fields collection by extracting matched paths from the TOML document.
@@ -411,7 +404,7 @@ impl<'a> TomlFields<'a> {
         let relative_parent_field = self.get_by_name(&relative_parent_name).unwrap_or_else(|| {
             panic!(
                 "Expected a valid relative parent field ({} didn't exist, processing {})",
-                &relative_parent_name, this_field.name
+                relative_parent_name, this_field.name
             )
         });
         // println!("    >> Found relative parent for {}; field: {}", this_field.name, relative_parent_field.name);
@@ -590,107 +583,71 @@ impl<'a> From<&'a Value> for TomlFields<'a> {
     }
 }
 
-impl<'a> From<Value> for TomlFields<'a> {
-    fn from(value: Value) -> Self {
-        // NOTE: this is a very smelly and hacky way to do this, but goes for now
-        // FIXME: rewrite to something sounder
-
-        // box value for stable memory reference
-        let boxed = Box::new(value);
-        // leak the box to get a static reference with appropriate lifetime
-        let value_ref = Box::leak(boxed);
-        TomlFields::new().with_root(value_ref)
-    }
-}
-
-impl<'a> ToTokens for TomlFields<'a> {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        self.generate_modules(tokens);
-    }
-}
-
 impl<'a> TomlFields<'a> {
-    /// Generates modules from the fields collection.
+    /// Turns the fields into the tree of modules and constants they bind as.
     ///
-    /// Starts the code generation process from the root field.
-    fn generate_modules(&self, tokens: &mut TokenStream2) {
-        // start from root
-        self.generate_module(0, tokens);
+    /// Starts from the root field, which has no name of its own.
+    pub fn to_module(&self) -> Module {
+        self.module_at(0)
     }
 
-    /// Generates a single module from a field and its children.
+    /// Builds a single module from a field and its children.
     ///
-    /// Recursively generates modules for table fields and constants for value fields.
-    /// The structure of the generated code reflects the effective module paths
+    /// Recursively builds modules for table fields and constants for value fields.
+    /// The structure of the result reflects the effective module paths
     /// derived from the TOML structure and the applied patterns.
-    fn generate_module(&self, idx: usize, tokens: &mut TokenStream2) {
-        // get module name (last component of path)
-        let module_name = self
+    fn module_at(&self, idx: usize) -> Module {
+        let field = self
             .get_field(idx)
-            .expect("Expected a valid index to an existing field")
+            .expect("Expected a valid index to an existing field");
+        // get module name (last component of path)
+        let module_name = field
             .path
             .split('.')
             .next_back()
             .expect("Expected there to be at least one node from split by '.'");
 
-        let mod_ident: Option<syn::Ident> = if !module_name.is_empty() {
-            Some(format_ident!(
-                "{}",
-                to_valid_ident(module_name).to_lowercase()
-            ))
+        let name = if !module_name.is_empty() {
+            Some(to_valid_ident(module_name).to_lowercase())
         } else {
             None
         };
 
-        let mut mod_tokens = TokenStream2::new();
-        let relative_children_fields_iter = self.get_relative_children_of(idx).fields;
+        let relative_children_fields = self.get_relative_children_of(idx).fields;
 
-        // add constants for this module
-        for field in relative_children_fields_iter
+        // constants for this module
+        let consts = relative_children_fields
             .iter()
             .filter(|f| !f.is_table())
-        {
-            let (ty, val) = convert_value_to_tokens(field.value);
-            let const_name = format_ident!("{}", to_valid_ident(&field.name).to_uppercase());
-            let comment = get_doc_comment(field);
-            mod_tokens.extend(quote! {
-                #comment
-                pub const #const_name: #ty = #val;
-            });
-        }
+            .map(|f| {
+                let (ty, value) = bind_value(f.value);
+                Const {
+                    name: to_valid_ident(&f.name).to_uppercase(),
+                    comment: f.comment.clone(),
+                    ty,
+                    value,
+                }
+            })
+            .collect();
 
-        // generate submodules for recursive hierarchy
-        for submod in relative_children_fields_iter
+        // submodules for recursive hierarchy
+        let modules = relative_children_fields
             .iter()
             .filter(|f| f.is_table())
-        {
-            // println!("    >> Generating submodule {} for: {}", submod.name, module_name);
-            self.generate_module(
-                self.index_of(submod)
-                    .expect("Expected a valid child that exists and thus has an index"),
-                &mut mod_tokens,
-            );
-        }
+            .map(|submod| {
+                self.module_at(
+                    self.index_of(submod)
+                        .expect("Expected a valid child that exists and thus has an index"),
+                )
+            })
+            .filter(|m| !m.is_empty())
+            .collect();
 
-        if !mod_tokens.is_empty() {
-            // A field with no name of its own contributes its contents to the enclosing
-            // module rather than opening one. Matching on the option carries that, where
-            // testing it and then unwrapping it left the two facts in different places.
-            tokens.extend(match mod_ident {
-                Some(name) => {
-                    let comment = get_doc_comment(
-                        self.get_field(idx)
-                            .expect("Expected this to be a valid field"),
-                    );
-                    quote! {
-                        #comment
-                        pub mod #name {
-                            #mod_tokens
-                        }
-                    }
-                },
-                None => quote! { #mod_tokens },
-            });
+        Module {
+            name,
+            comment: field.comment.clone(),
+            consts,
+            modules,
         }
     }
 }

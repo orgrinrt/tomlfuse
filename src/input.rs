@@ -4,10 +4,12 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::module::{RootModule, RootModuleSource};
-use quote::{quote, ToTokens};
+use crate::module::RootModuleSource;
+use crate::render;
+use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Result as SynResult};
+use tomlfuse_core::Source;
 
 /// Parsed representation of the input to `tomlfuse` macros.
 ///
@@ -49,14 +51,29 @@ impl Parse for MacroInput {
 
 impl ToTokens for MacroInput {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let module_sources = self.root_module_sources.iter();
-        let modules = module_sources.map(move |source| {
-            RootModule::new(source.clone(), self.toml_path.as_deref().unwrap_or(""))
-        });
+        // attempt to read the TOML file from:
+        // 1. direct path
+        // 2. relative to workspace root
+        // 3. relative to CARGO_MANIFEST_DIR
+        //
+        // this allows for flexibility in specifying the TOML path while
+        // still providing reasonable defaults without requiring absolute paths
+        // for common scenarios like referencing Cargo.toml
+        let source = match Source::locate(self.toml_path.as_deref().unwrap_or("")) {
+            Ok(source) => source,
+            Err(error) => {
+                tokens.extend(render::compile_error(&error.to_string()));
+                return;
+            },
+        };
 
-        tokens.extend(quote! {
-            #(#modules)*
-        });
+        tokens.extend(render::tracker(&source));
+        for module_source in &self.root_module_sources {
+            tokens.extend(match tomlfuse_core::bind(&source, &module_source.section()) {
+                Ok(module) => render::section(&module_source.name, &module, &source),
+                Err(error) => render::compile_error(&error.to_string()),
+            });
+        }
     }
 }
 

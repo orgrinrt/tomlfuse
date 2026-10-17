@@ -21,7 +21,7 @@ homepage = "https://github.com/orgrinrt/tomlfuse"
 repository = "https://github.com/orgrinrt/tomlfuse"
 
 [workspace]
-members = []
+members = ["tomlfuse-core"]
 
 [workspace.metadata]
 # Read by tests/integration_test_workspace.rs, which had no workspace to read before this.
@@ -58,18 +58,17 @@ no_alloc = ["no_std"]
 [dev-dependencies]
 trybuild = "1.0"
 tempfile = "3.19.1"
+toml = { version = "^0.8" }
 
 [lib]
 proc-macro = true
 doctest = false # unfortunately not practical to setup the doc examples with actual toml files to load or even as inlined literals for the content
 
 [dependencies]
-toml = { version = "^0.8" }
+tomlfuse-core = { version = "0.0.5", path = "tomlfuse-core" }
 proc-macro2 = { version = "^1.0" }
 quote = { version = "^1.0" }
 syn = { version = "^2.0" }
-globset = "^0.4"
-once_cell = { version = "^1.21", features = ["std"] }
 
 # NOTE: below metadata is for test purposes only
 

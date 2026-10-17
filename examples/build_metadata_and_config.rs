@@ -55,7 +55,7 @@ fn main() {
     println!("built against");
     println!("  syn      {}", deps::syn::VERSION);
     println!("  quote    {}", deps::quote::VERSION);
-    println!("  globset  {}", deps::GLOBSET);
+    println!("  core     {}", deps::tomlfuse_core::VERSION);
     println!();
 
     // The manifest is this crate's; the file is the application's. Same syntax, and the

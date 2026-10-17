@@ -15,14 +15,10 @@ use std::env;
 use std::path::PathBuf;
 use syn::{parse_macro_input, LitStr};
 
-mod comments;
-mod field;
 mod input;
 mod module;
 mod pattern;
-mod utils;
-
-use utils::*;
+mod render;
 
 /// Expands to a bound constants from the workspace's `Cargo.toml`.
 ///
@@ -60,7 +56,7 @@ use utils::*;
 #[proc_macro]
 pub fn workspace(input: TokenStream) -> TokenStream {
     // find workspace root
-    let cargo_path = find_workspace_root().join("Cargo.toml");
+    let cargo_path = tomlfuse_core::find_workspace_root().join("Cargo.toml");
 
     __codegen(input, Some(cargo_path))
 }

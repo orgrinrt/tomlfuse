@@ -50,6 +50,15 @@ crate against this one with a control proving that crate genuinely has no `std` 
 This crate itself always builds with `std`. It is a proc macro, so it runs on the host inside
 the compiler.
 
+### Using the walker without the macros
+
+The toml reading and the field walker live in [`tomlfuse-core`](tomlfuse-core), a plain library
+that knows nothing about Rust tokens, and the macros here are a thin layer over it. A build
+script or a tool that wants the same constants from the same toml, in a shader header for
+instance, reads a `Source`, describes what to take in a `Section`, and gets back a tree of
+modules whose constants each carry a name, a type, a value and the comment above the key. See
+its [readme](tomlfuse-core/README.md) for the shape of it.
+
 ### Examples
 
 `examples/` holds one example per piece of the pattern language, each reading a slice of the
