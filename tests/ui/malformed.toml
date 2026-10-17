@@ -1,0 +1,5 @@
+# A config with one mistake in it, three lines down.
+[engine]
+voxel_pixels = 17
+frame_rate = = 30
+name = "orrery"

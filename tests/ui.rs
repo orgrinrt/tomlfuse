@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 /// The cases that must not compile, counted against the directory rather than against a list
 /// somebody has to remember to extend.
-const EXPECTED_FAILING: usize = 2;
+const EXPECTED_FAILING: usize = 3;
 
 /// The cases that must. There is one, and it holds the other half of what an exclusion is
 /// for: a binding has to be usable from an ordinary crate, and this one denies a lint that
@@ -93,8 +93,13 @@ fn a_binding_leaves_out_what_the_pattern_excludes() {
 
     let destination = scratch_crate().join("tests/ui");
     fs::create_dir_all(&destination).expect("the scratch fixture directory");
-    fs::copy(ui.join("fixture.toml"), destination.join("fixture.toml"))
-        .expect("the fixture copies into the scratch crate");
+    for fixture in fs::read_dir(&ui).expect("tests/ui is readable").filter_map(|e| e.ok()) {
+        let path = fixture.path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            fs::copy(&path, destination.join(fixture.file_name()))
+                .expect("the fixture copies into the scratch crate");
+        }
+    }
 
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/*.rs");

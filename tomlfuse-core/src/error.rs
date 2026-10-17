@@ -57,10 +57,13 @@ impl Display for Error {
                     .collect::<Vec<_>>()
                     .join("\n  ")
             ),
+            // The parser's own message, whole. It carries the line, the column and the line of
+            // the file it stopped at, which is the only thing that finds a syntax error in a
+            // large file without reading it by eye. Its message ends in a newline of its own.
             Error::Unparseable {
                 given,
-                ..
-            } => write!(f, "Failed to parse toml file: {given}"),
+                source,
+            } => write!(f, "tomlfuse: could not parse `{given}`:\n{}", source.to_string().trim_end()),
             Error::BadPattern {
                 pattern,
                 reason,

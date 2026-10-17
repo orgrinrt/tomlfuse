@@ -247,6 +247,22 @@ mod tests {
     }
 
     #[test]
+    fn a_syntax_error_carries_the_parsers_line_and_column() {
+        let err = Source::parse("bad.toml", "bad.toml".into(), "ok = 1\nbad = = 2\n").unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("bad.toml"), "the message does not name the file:\n{message}");
+        assert!(
+            message.contains("line 2, column 7"),
+            "the message drops the position the parser reported:\n{message}"
+        );
+        assert!(
+            message.contains("bad = = 2"),
+            "the message drops the line the parser pointed at:\n{message}"
+        );
+    }
+
+    #[test]
     fn a_file_that_is_not_there_says_where_it_looked() {
         let err = Source::read(Path::new("/nowhere/at/all.toml")).unwrap_err();
         assert!(
