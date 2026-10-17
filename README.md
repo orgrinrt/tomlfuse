@@ -57,12 +57,13 @@ the compiler.
 
 ### Using the walker without the macros
 
-The toml reading and the field walker live in [`tomlfuse-core`](tomlfuse-core), a plain library
-that knows nothing about Rust tokens, and the macros here are a thin layer over it. A build
-script or a tool that wants the same constants from the same toml, in a shader header for
-instance, reads a `Source`, describes what to take in a `Section`, and gets back a tree of
-modules whose constants each carry a name, a type, a value and the comment above the key. See
-its [readme](tomlfuse-core/README.md) for the shape of it.
+The toml reading and the field walker live in
+[`tomlfuse-core`](https://crates.io/crates/tomlfuse-core), a plain library that knows nothing
+about Rust tokens, and the macros here are a thin layer over it. A build script or a tool that
+wants the same constants from the same toml, in a shader header for instance, reads a `Source`,
+describes what to take in a `Section`, and gets back a tree of modules whose constants each
+carry a name, a type, a value and the comment above the key. See
+[its page on crates.io](https://crates.io/crates/tomlfuse-core) for the shape of it.
 
 ### Examples
 
@@ -150,7 +151,20 @@ pattern too broad for its type is found, so `server.*: u16` over a table with a 
 an error naming `server.host`.
 
 A float narrowed to an `f32` loses digits it did not have room for, the way any `f64` does, and
-only a magnitude it cannot hold is an error.
+only a magnitude it cannot hold is an error. Whether it fits is decided by narrowing it, so
+`3.4028235e38`, the largest `f32`, fits; a value that would round to infinity is an error, and
+so is a non-zero value too small to be anything but `0.0`. Infinity and NaN have no literal to
+bind as and are refused, with or without a width.
+
+The widths are the ten above and not `usize` or `isize`. Their size is the target's, and a
+procedural macro runs on the host, so it would be checking a value against a pointer width that
+may not be the one the code is built for. Bind it as `u32` or `u64` and convert where it is
+used: `as usize` works in a `const` too.
+
+A pattern that gives a width must reach at least one number in the file. One that matches no key,
+a typo like `size.voxle: u8`, or only tables, is an error naming the pattern, where it would
+otherwise leave the key it was meant for at `i64` without a word. Spell it the way the walker
+does, which is with an underscore for a dash.
 
 #### Arrays
 
@@ -210,10 +224,12 @@ fn main() {
 
 ### Binding from workspace
 
-Not currently covered with tests, so not guaranteed to work, but works similar to the package example.
+Works like the package example, over the workspace's `Cargo.toml` instead of the crate's.
+[`tests/integration_test_workspace.rs`](tests/integration_test_workspace.rs) holds it to that.
 
-When the path is omitted, looks for the first toml file that contains
-`[workspace]` in the current directory and upwards until system root.
+When the path is omitted, looks for the first `Cargo.toml` that contains `[workspace]`,
+starting at the crate being built and going upwards until system root. A crate that is in no
+workspace gets its own manifest.
 
 ```rust,ignore
 use tomlfuse::workspace;
@@ -302,7 +318,7 @@ fn main() {
 
 ## Compatibility
 
-This crate requires rust `1.73.0` or later. With present dependencies, this is the minimum supported version the dependencies allow. Bumping msrv is considered a breaking change and will be done in a minor version.
+This crate requires rust `1.88.0` or later. That is the version `globset`, a direct dependency, declares, so it is the lowest anything that depends on this crate can build with. Bumping msrv is considered a breaking change and will be done in a minor version.
 
 ### Versioning policy
 

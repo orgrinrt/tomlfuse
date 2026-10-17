@@ -27,8 +27,8 @@ crate, then the workspace. A [`Section`] says which keys to take and what to cal
 walks one through the other and returns a [`Bound`]: a [`Module`], whose constants each carry a
 name, the comment that sat above the key, a [`Ty`] and a [`Lit`], and a list of [`Problem`]s.
 
-A value that has no constant to be, an array of mixed kinds, a table inside an array or a
-datetime, is a `Problem` naming its key in the file, and the rest of the section is bound
+A value that has no constant to be, an array of mixed kinds, a table inside an array, a
+datetime or a float that is infinite or NaN, is a `Problem` naming its key in the file, and the rest of the section is bound
 regardless. The caller decides what one is worth; the macros make each a `compile_error!`.
 
 The macros are in `tomlfuse`, which depends on this crate.
