@@ -32,7 +32,7 @@ pub enum IntTy {
 
 impl IntTy {
     /// The type's name as Rust spells it.
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             IntTy::I8 => "i8",
             IntTy::I16 => "i16",
@@ -46,16 +46,16 @@ impl IntTy {
     }
 
     /// The smallest and the largest value the type holds.
-    pub fn bounds(self) -> (i128, i128) {
+    pub const fn bounds(self) -> (i128, i128) {
         match self {
-            IntTy::I8 => (i8::MIN.into(), i8::MAX.into()),
-            IntTy::I16 => (i16::MIN.into(), i16::MAX.into()),
-            IntTy::I32 => (i32::MIN.into(), i32::MAX.into()),
-            IntTy::I64 => (i64::MIN.into(), i64::MAX.into()),
-            IntTy::U8 => (u8::MIN.into(), u8::MAX.into()),
-            IntTy::U16 => (u16::MIN.into(), u16::MAX.into()),
-            IntTy::U32 => (u32::MIN.into(), u32::MAX.into()),
-            IntTy::U64 => (u64::MIN.into(), u64::MAX.into()),
+            IntTy::I8 => (i8::MIN as i128, i8::MAX as i128),
+            IntTy::I16 => (i16::MIN as i128, i16::MAX as i128),
+            IntTy::I32 => (i32::MIN as i128, i32::MAX as i128),
+            IntTy::I64 => (i64::MIN as i128, i64::MAX as i128),
+            IntTy::U8 => (u8::MIN as i128, u8::MAX as i128),
+            IntTy::U16 => (u16::MIN as i128, u16::MAX as i128),
+            IntTy::U32 => (u32::MIN as i128, u32::MAX as i128),
+            IntTy::U64 => (u64::MIN as i128, u64::MAX as i128),
         }
     }
 }
@@ -71,7 +71,7 @@ pub enum FloatTy {
 
 impl FloatTy {
     /// The type's name as Rust spells it.
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             FloatTy::F32 => "f32",
             FloatTy::F64 => "f64",
@@ -79,9 +79,9 @@ impl FloatTy {
     }
 
     /// The largest magnitude of a finite value the type holds.
-    pub fn largest(self) -> f64 {
+    pub const fn largest(self) -> f64 {
         match self {
-            FloatTy::F32 => f32::MAX.into(),
+            FloatTy::F32 => f32::MAX as f64,
             FloatTy::F64 => f64::MAX,
         }
     }
@@ -137,7 +137,7 @@ impl Width {
     }
 
     /// The type's name as Rust spells it.
-    pub fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Width::Int(ty) => ty.name(),
             Width::Float(ty) => ty.name(),
@@ -145,7 +145,7 @@ impl Width {
     }
 
     /// The constant type a number of this width is.
-    pub fn ty(self) -> Ty {
+    pub const fn ty(self) -> Ty {
         match self {
             Width::Int(ty) => Ty::Int(ty),
             Width::Float(ty) => Ty::Float(ty),
@@ -217,7 +217,7 @@ pub struct Module {
 
 impl Module {
     /// Whether there is nothing in this module, nor in anything inside it.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.consts.is_empty() && self.modules.is_empty()
     }
 }
@@ -273,5 +273,36 @@ mod tests {
         }
         assert_eq!(Width::parse("usize"), None);
         assert_eq!(Width::parse("isize"), None);
+    }
+
+    // Evaluated by the compiler: these stop compiling when one of them is no longer `const`.
+    const U8_NAME: &str = IntTy::U8.name();
+    const I16_MIN: i128 = IntTy::I16.bounds().0;
+    const F32_NAME: &str = FloatTy::F32.name();
+    const F32_LARGEST: f64 = FloatTy::F32.largest();
+    const WIDTH_NAME: &str = Width::Float(FloatTy::F64).name();
+    const WIDTH_TY: Ty = Width::Int(IntTy::U8).ty();
+    const EMPTY_IS_EMPTY: bool = {
+        let module = Module {
+            name: None,
+            comment: None,
+            consts: Vec::new(),
+            modules: Vec::new(),
+        };
+        let empty = module.is_empty();
+        std::mem::forget(module);
+        empty
+    };
+
+    const _: () = assert!(EMPTY_IS_EMPTY);
+
+    #[test]
+    fn the_cheap_accessors_are_const() {
+        assert_eq!(U8_NAME, "u8");
+        assert_eq!(I16_MIN, -32_768);
+        assert_eq!(F32_NAME, "f32");
+        assert_eq!(F32_LARGEST, f64::from(f32::MAX));
+        assert_eq!(WIDTH_NAME, "f64");
+        assert_eq!(WIDTH_TY, Ty::Int(IntTy::U8));
     }
 }
