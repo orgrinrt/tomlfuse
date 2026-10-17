@@ -1,0 +1,13 @@
+error: tomlfuse: the width `u8` is given to `size.voxle`, which matches no key in the file, so it would apply to nothing. Check the pattern for a typo.
+  --> tests/ui/a_width_that_matches_nothing_is_refused.rs:4:1
+   |
+ 4 | / tomlfuse::file! {
+ 5 | |     "tests/ui/widths.toml"
+ 6 | |
+ 7 | |     [size]
+ 8 | |     size.*
+ 9 | |     size.voxle: u8
+10 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

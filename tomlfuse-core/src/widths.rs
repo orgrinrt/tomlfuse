@@ -4,13 +4,14 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::error::Problem;
+use crate::error::{Error, Problem};
 use crate::field::TomlField;
 use crate::fields::TomlFields;
 use crate::model::Width;
 use crate::names::to_valid_ident;
 use crate::pattern::Pattern;
 use globset::GlobMatcher;
+use toml::Value;
 
 /// A width, and the pattern that says which keys it is for.
 #[derive(Clone, Debug)]
@@ -55,5 +56,44 @@ impl TomlFields<'_> {
             }
         }
         Ok(found.map(|rule| rule.width))
+    }
+}
+
+/// Checks that each width has a number in the file to apply to.
+///
+/// A pattern is matched against the path of every key in the document, as the walker names
+/// it, whether or not the section selects the key. One that matches nothing is almost
+/// certainly a typo, and one that matches only tables is too shallow to reach a number. Left
+/// alone, both bind the keys they were meant for as `i64` or `f64` without a word.
+pub(crate) fn check_used(rules: &[WidthRule], root: &Value) -> Result<(), Error> {
+    let mut leaves = Vec::new();
+    let mut tables = Vec::new();
+    paths(root, "", &mut leaves, &mut tables);
+    for rule in rules {
+        if leaves.iter().any(|path| rule.matcher.is_match(path)) {
+            continue;
+        }
+        return Err(Error::UnusedWidth {
+            pattern: rule.pattern.to_string(),
+            width: rule.width.name(),
+            only_tables: tables.iter().any(|path| rule.matcher.is_match(path)),
+        });
+    }
+    Ok(())
+}
+
+/// Every key path under `value`, split by whether it is a table, spelled as the walker does.
+fn paths(value: &Value, at: &str, leaves: &mut Vec<String>, tables: &mut Vec<String>) {
+    let Value::Table(table) = value else {
+        return;
+    };
+    for (key, inner) in table {
+        let path = to_valid_ident(&if at.is_empty() { key.clone() } else { format!("{at}.{key}") });
+        if inner.is_table() {
+            tables.push(path.clone());
+            paths(inner, &path, leaves, tables);
+        } else {
+            leaves.push(path);
+        }
     }
 }

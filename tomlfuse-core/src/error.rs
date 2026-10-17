@@ -40,6 +40,16 @@ pub enum Error {
         reason: String,
     },
     /// The environment a cargo-relative lookup needs is not there.
+    /// A width was given to a pattern that has no number in the file to apply it to.
+    UnusedWidth {
+        /// The pattern as written.
+        pattern: String,
+        /// The width it was given, as Rust spells it.
+        width: &'static str,
+        /// Whether the pattern matches tables, so that it is not a typo but a pattern too
+        /// shallow to reach a number. Otherwise it matches nothing at all.
+        only_tables: bool,
+    },
     NotUnderCargo {
         /// The variable that was missing.
         variable: &'static str,
@@ -108,6 +118,25 @@ impl Display for Error {
                 "tomlfuse: `{pattern}` is not a valid pattern. {reason}\n\
                  Patterns are globs over dotted toml paths: `*` matches one segment, `**` any \
                  number, `{{a,b}}` either, and a leading `!` excludes."
+            ),
+            Error::UnusedWidth {
+                pattern,
+                width,
+                only_tables: false,
+            } => write!(
+                f,
+                "tomlfuse: the width `{width}` is given to `{pattern}`, which matches no key in \
+                 the file, so it would apply to nothing. Check the pattern for a typo."
+            ),
+            Error::UnusedWidth {
+                pattern,
+                width,
+                only_tables: true,
+            } => write!(
+                f,
+                "tomlfuse: the width `{width}` is given to `{pattern}`, which matches only \
+                 tables. A width is for the numbers inside one, so name those: `{pattern}.*`, or \
+                 a key."
             ),
             Error::NotUnderCargo {
                 variable,

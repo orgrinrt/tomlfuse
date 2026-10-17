@@ -9,7 +9,7 @@ use crate::fields::TomlFields;
 use crate::model::{Module, Width};
 use crate::pattern::Pattern;
 use crate::source::Source;
-use crate::widths::WidthRule;
+use crate::widths::{check_used, WidthRule};
 use globset::GlobSetBuilder;
 use std::collections::HashMap;
 
@@ -81,6 +81,7 @@ pub fn bind(source: &Source, section: &Section) -> Result<Bound, Error> {
             width: *width,
         });
     }
+    check_used(&widths, source.value())?;
     let fields = TomlFields::from(source.value())
         .with_inclusion_globs(Some(build_set(inclusions, &section.include)?))
         .with_exclusion_globs(Some(build_set(exclusions, &section.exclude)?))
@@ -307,5 +308,57 @@ mod tests {
                 "{err}"
             );
         }
+    }
+
+    #[test]
+    fn a_width_whose_pattern_matches_no_key_is_an_error_naming_the_pattern() {
+        // `voxle` is a typo, and used to bind `voxel` as an `i64` with nothing said.
+        let source = source("[size]\nvoxel = 17\n");
+
+        let err = bind(&source, &at(&[("size.voxle", "u8")], &["size.*"])).unwrap_err();
+
+        assert!(
+            matches!(&err, Error::UnusedWidth { pattern, .. } if pattern == "size.voxle"),
+            "{err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "tomlfuse: the width `u8` is given to `size.voxle`, which matches no key in the \
+             file, so it would apply to nothing. Check the pattern for a typo."
+        );
+    }
+
+    #[test]
+    fn a_width_whose_pattern_matches_only_tables_is_an_error_naming_the_pattern() {
+        let source = source("[size]\nvoxel = 17\n[size.inner]\nframes = 3\n");
+
+        let err = bind(&source, &at(&[("size", "u8")], &["size.*"])).unwrap_err();
+
+        assert!(
+            matches!(&err, Error::UnusedWidth { pattern, .. } if pattern == "size"),
+            "{err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "tomlfuse: the width `u8` is given to `size`, which matches only tables. A width is \
+             for the numbers inside one, so name those: `size.*`, or a key."
+        );
+    }
+
+    #[test]
+    fn a_width_pattern_that_reaches_a_key_is_fine_however_it_reaches_it() {
+        let source = source("[size]\nvoxel-px = 17\n[size.inner]\nframes = 3\n");
+
+        // Through a table's keys, across a table, by the underscore spelling of a dash, and
+        // as a pattern that also happens to match a table.
+        for pattern in ["size.*", "size.**", "size.voxel_px", "size.{voxel_px,inner.frames}"] {
+            let bound = bind(&source, &at(&[(pattern, "u8")], &["size.**"]));
+            assert!(bound.is_ok(), "{pattern}: {}", bound.unwrap_err());
+        }
+
+        // The dash is not how a pattern spells it, as the width has always been matched
+        // against the normalised path. That used to leave the key at `i64` unremarked.
+        let err = bind(&source, &at(&[("size.voxel-px", "u8")], &["size.**"])).unwrap_err();
+        assert!(matches!(&err, Error::UnusedWidth { pattern, .. } if pattern == "size.voxel-px"));
     }
 }
