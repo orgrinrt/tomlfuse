@@ -5,6 +5,7 @@
 //------------------------------------------------------------------------------
 
 use std::fmt::{self, Display, Formatter};
+use std::io;
 use std::path::PathBuf;
 
 /// Why a toml file could not be turned into constants.
@@ -19,6 +20,10 @@ pub enum Error {
         given: String,
         /// Every place that was tried, in order.
         tried: Vec<PathBuf>,
+        /// What the system said when a place was there and could not be read, such as a
+        /// permission being refused. A place that was simply absent says nothing of the
+        /// kind, since the list above already does.
+        cause: Option<io::Error>,
     },
     /// The file was found and is not toml.
     Unparseable {
@@ -67,16 +72,23 @@ impl Display for Error {
             Error::Unreadable {
                 given,
                 tried,
-            } => write!(
-                f,
-                "tomlfuse: could not read `{given}`. Looked in:\n  {}\nA relative path is taken \
-                 relative to the crate, then to the workspace root.",
-                tried
-                    .iter()
-                    .map(|c| c.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n  ")
-            ),
+                cause,
+            } => {
+                write!(f, "tomlfuse: could not read `{given}`")?;
+                if let Some(cause) = cause {
+                    write!(f, ": {cause}")?;
+                }
+                write!(
+                    f,
+                    ". Looked in:\n  {}\nA relative path is taken relative to the crate, then to \
+                     the workspace root.",
+                    tried
+                        .iter()
+                        .map(|c| c.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n  ")
+                )
+            },
             // The parser's own message, whole. It carries the line, the column and the line of
             // the file it stopped at, which is the only thing that finds a syntax error in a
             // large file without reading it by eye. Its message ends in a newline of its own.
@@ -115,6 +127,10 @@ impl std::error::Error for Error {
                 source,
                 ..
             } => Some(source),
+            Error::Unreadable {
+                cause,
+                ..
+            } => cause.as_ref().map(|cause| cause as _),
             _ => None,
         }
     }

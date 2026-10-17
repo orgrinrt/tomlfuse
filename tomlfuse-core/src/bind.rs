@@ -275,4 +275,37 @@ mod tests {
         assert_eq!(bound.module.modules.len(), 1);
         assert_eq!(names(&bound.module.modules[0]), ["ALSO"]);
     }
+
+    #[test]
+    fn a_pattern_that_is_not_a_glob_is_an_error_naming_it_wherever_it_is_written() {
+        let source = source("[a]\nb = 1\n");
+
+        for (bad, section) in [
+            ("a.[b", section(&["a.[b"])),
+            (
+                "a.{b",
+                Section {
+                    exclude: vec![Pattern::new("a.{b")],
+                    ..section(&["a.*"])
+                },
+            ),
+            ("a.[b", at(&[("a.[b", "u8")], &["a.*"])),
+        ] {
+            let err = bind(&source, &section).unwrap_err();
+            assert!(
+                matches!(&err, Error::BadPattern { pattern, .. } if pattern == bad),
+                "{err}"
+            );
+            assert!(
+                err.to_string()
+                    .starts_with(&format!("tomlfuse: `{bad}` is not a valid pattern. ")),
+                "{err}"
+            );
+            assert!(
+                err.to_string()
+                    .contains("Patterns are globs over dotted toml paths"),
+                "{err}"
+            );
+        }
+    }
 }
