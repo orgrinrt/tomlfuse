@@ -94,6 +94,15 @@ impl FloatTy {
             FloatTy::F64 => format!("{:e}", f64::MAX),
         }
     }
+
+    /// The smallest positive magnitude the type holds, which is a subnormal, as the shortest
+    /// text that reads back as the type's own value.
+    pub fn smallest_text(self) -> String {
+        match self {
+            FloatTy::F32 => format!("{:e}", f32::from_bits(1)),
+            FloatTy::F64 => format!("{:e}", f64::from_bits(1)),
+        }
+    }
 }
 
 /// The type a key is to be bound at, when the macro input names one.

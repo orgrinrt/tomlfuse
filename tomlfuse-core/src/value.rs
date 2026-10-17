@@ -109,6 +109,42 @@ fn not_a_number(key: &str, kind: &str, width: Width) -> Problem {
     )
 }
 
+/// Checks that a finite float survives being narrowed to `ty`, and binds it if so.
+///
+/// Whether it fits is decided by narrowing it, not by comparing it with the type's largest
+/// value as an `f64`: that comparison refuses everything between the limit as the message
+/// prints it and its exact widening, and the limit itself is among them. A value that rounds
+/// to the largest finite one is that one. One that rounds to infinity or to zero is not what
+/// the file says, and stops the build like an integer that would wrap.
+fn fit_float(key: &str, f: f64, ty: FloatTy) -> Result<(Shape, Lit), Problem> {
+    let narrowed = match ty {
+        FloatTy::F32 => f64::from(f as f32),
+        FloatTy::F64 => f,
+    };
+    if narrowed.is_infinite() {
+        return Err(refuse(
+            key,
+            format!(
+                "is {f:e}, which does not fit {} (magnitude up to {}).",
+                ty.name(),
+                ty.largest_text()
+            ),
+        ));
+    }
+    if f != 0.0 && narrowed == 0.0 {
+        return Err(refuse(
+            key,
+            format!(
+                "is {f:e}, which is too small for {} (magnitude down to {}) and would become \
+                 zero.",
+                ty.name(),
+                ty.smallest_text()
+            ),
+        ));
+    }
+    Ok((Shape::Leaf(Ty::Float(ty)), Lit::Float(f)))
+}
+
 fn shaped(key: &str, value: &Value, width: Option<Width>) -> Result<(Shape, Lit), Problem> {
     match value {
         Value::String(s) => match width {
@@ -142,23 +178,15 @@ fn shaped(key: &str, value: &Value, width: Option<Width>) -> Result<(Shape, Lit)
             )),
         },
         Value::Float(f) => match width {
+            _ if !f.is_finite() => Err(refuse(
+                key,
+                format!(
+                    "is {f}, which is not a finite number and has no literal to bind as. Write a \
+                     finite value."
+                ),
+            )),
             None => Ok((Shape::Leaf(Ty::Float(FloatTy::F64)), Lit::Float(*f))),
-            Some(Width::Float(ty)) => {
-                // Infinity and NaN fit anything. A finite value too large to fit would become
-                // infinity, which is not what the file says.
-                if f.is_finite() && f.abs() > ty.largest() {
-                    Err(refuse(
-                        key,
-                        format!(
-                            "is {f:e}, which does not fit {} (magnitude up to {}).",
-                            ty.name(),
-                            ty.largest_text()
-                        ),
-                    ))
-                } else {
-                    Ok((Shape::Leaf(Ty::Float(ty)), Lit::Float(*f)))
-                }
-            },
+            Some(Width::Float(ty)) => fit_float(key, *f, ty),
             Some(Width::Int(ty)) => Err(refuse(
                 key,
                 format!("is a float, and `{}` is an integer type.", ty.name()),
@@ -395,8 +423,6 @@ mod tests {
             bound_at("1e300", Some("f64")).unwrap().0,
             Ty::Float(FloatTy::F64)
         );
-        assert!(bound_at("3.4028234e38", Some("f32")).is_ok());
-        assert!(bound_at("-3.4028234e38", Some("f32")).is_ok());
 
         let err = bound_at("1e39", Some("f32")).unwrap_err();
         assert_eq!(
@@ -404,8 +430,78 @@ mod tests {
             "is 1e39, which does not fit f32 (magnitude up to 3.4028235e38)."
         );
         assert!(bound_at("-1e39", Some("f32")).is_err());
-        // Infinity is what the file says, and fits.
-        assert!(bound_at("inf", Some("f32")).is_ok());
+    }
+
+    #[test]
+    fn the_largest_f32_fits_however_it_is_written_and_the_first_float_past_it_does_not() {
+        // The limit the message names, written the way the message writes it. It is not
+        // exactly `f32::MAX` as an `f64`, which is why comparing against that refused it.
+        let max = format!("{:e}", f32::MAX);
+        assert_eq!(max, "3.4028235e38");
+        assert!(bound_at(&max, Some("f32")).is_ok(), "{max}");
+        assert!(bound_at(&format!("-{max}"), Some("f32")).is_ok());
+        assert!(bound_at("3.4028234e38", Some("f32")).is_ok());
+        // Exactly `f32::MAX`, from the other direction.
+        assert!(bound_at(&format!("{:e}", f64::from(f32::MAX)), Some("f32")).is_ok());
+
+        // Halfway to the next power of two is where narrowing stops rounding down to
+        // `f32::MAX` and starts rounding up to infinity: below it fits, at it does not.
+        let halfway = f64::from(f32::MAX) + 2f64.powi(103);
+        assert!((halfway as f32).is_infinite());
+        assert_eq!(halfway.next_down() as f32, f32::MAX);
+        let below = format!("{:e}", halfway.next_down());
+        let at = format!("{:e}", halfway);
+        assert!(bound_at(&below, Some("f32")).is_ok(), "{below}");
+        assert!(
+            bound_at(&format!("-{below}"), Some("f32")).is_ok(),
+            "-{below}"
+        );
+        let err = bound_at(&at, Some("f32")).unwrap_err();
+        assert!(err.reason.contains("does not fit f32"), "{at}: {err}");
+        assert!(bound_at(&format!("-{at}"), Some("f32")).is_err(), "-{at}");
+
+        // `f64` has no width above it to overflow.
+        assert!(bound_at(&format!("{:e}", f64::MAX), Some("f64")).is_ok());
+    }
+
+    #[test]
+    fn a_float_too_small_for_f32_is_refused_instead_of_becoming_zero() {
+        let smallest = f32::from_bits(1);
+        let text = format!("{:e}", smallest);
+        assert!(bound_at(&text, Some("f32")).is_ok(), "{text}");
+        assert!(bound_at("1.5e-45", Some("f32")).is_ok());
+
+        // Half the smallest magnitude ties to even, which is zero. Anything above it still
+        // reads as the smallest, and is a value rather than a loss.
+        let half = f64::from(smallest) / 2.0;
+        assert!(bound_at(&format!("{:e}", half.next_up()), Some("f32")).is_ok());
+        let err = bound_at(&format!("{:e}", half), Some("f32")).unwrap_err();
+        assert!(err.reason.contains("too small for f32"), "{err}");
+        assert!(err.reason.contains("1e-45"), "{err}");
+        assert!(bound_at("-1e-46", Some("f32")).is_err());
+
+        // Zero is zero, whichever way round, and `f64` reaches far lower.
+        assert!(bound_at("0.0", Some("f32")).is_ok());
+        assert!(bound_at("-0.0", Some("f32")).is_ok());
+        assert!(bound_at("1e-46", Some("f64")).is_ok());
+        assert!(bound_at("1e-300", Some("f64")).is_ok());
+    }
+
+    #[test]
+    fn infinity_and_nan_are_refused_naming_the_key_with_or_without_a_width() {
+        for (text, shown) in [("inf", "inf"), ("-inf", "-inf"), ("nan", "NaN"), ("-nan", "NaN")] {
+            for width in [None, Some("f32"), Some("f64")] {
+                let err = bound_at(text, width).unwrap_err();
+                assert_eq!(err.key, "value", "{text} at {width:?}");
+                assert!(
+                    err.reason.starts_with(&format!("is {shown}, which")),
+                    "{err}"
+                );
+            }
+        }
+        let err = bound_at("[1.0, inf]", Some("f32")).unwrap_err();
+        assert_eq!(err.key, "value[1]");
+        assert_eq!(bound("[1.0, nan]").unwrap_err().key, "value[1]");
     }
 
     #[test]
