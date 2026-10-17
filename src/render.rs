@@ -307,10 +307,15 @@ mod tests {
 
     #[test]
     fn test_get_doc_comment_with_escaping() {
-        let doc = get_doc_comment(Some("with `code` and 'quotes'")).to_string();
-        // verify doc comment contains the basic content
-        assert!(doc.contains("with"));
-        assert!(doc.contains("code"));
-        assert!(doc.contains("quotes"));
+        assert_eq!(
+            get_doc_comment(Some("with `code` and 'quotes'")).to_string(),
+            r#"# [doc = "with `code` and 'quotes'"]"#
+        );
+        // What a string literal needs escaped is escaped, so the comment cannot end the
+        // attribute early or run into the next line of the generated code.
+        assert_eq!(
+            get_doc_comment(Some("say \"hi\" \\ now\nthen\ttab")).to_string(),
+            r##"# [doc = "say \"hi\" \\ now\nthen\ttab"]"##
+        );
     }
 }
