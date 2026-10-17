@@ -15,14 +15,10 @@ use std::env;
 use std::path::PathBuf;
 use syn::{parse_macro_input, LitStr};
 
-mod comments;
-mod field;
 mod input;
 mod module;
 mod pattern;
-mod utils;
-
-use utils::*;
+mod render;
 
 /// Expands to a bound constants from the workspace's `Cargo.toml`.
 ///
@@ -34,6 +30,7 @@ use utils::*;
 /// - Wildcards for groups: `workspace.*`
 /// - Negation for exclusions: `!workspace.excluded`
 /// - Aliases for renaming: `alias new = old`
+/// - A type for numbers after a pattern: `workspace.metadata.count: u32`
 /// - Section headers for modules: `[workspace]`
 ///
 /// Each section header creates a module; patterns select which keys to expose as constants.
@@ -60,7 +57,7 @@ use utils::*;
 #[proc_macro]
 pub fn workspace(input: TokenStream) -> TokenStream {
     // find workspace root
-    let cargo_path = find_workspace_root().join("Cargo.toml");
+    let cargo_path = tomlfuse_core::find_workspace_root().join("Cargo.toml");
 
     __codegen(input, Some(cargo_path))
 }
@@ -123,6 +120,7 @@ pub fn package(input: TokenStream) -> TokenStream {
 /// - Wildcards for groups: `baz.*`
 /// - Negation for exclusions: `!foo.bar.excluded`
 /// - Aliases for renaming: `alias new = old.path.to.replace`
+/// - A type for numbers after a pattern: `foo.bar: u8`, which the value is checked against
 /// - Section headers for modules: `[foo]`
 ///
 /// Each section header creates a module; patterns select which keys to expose as constants.

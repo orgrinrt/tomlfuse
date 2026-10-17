@@ -1,0 +1,12 @@
+error: tomlfuse: `size.ratio` is a float, and `u8` is an integer type.
+ --> tests/ui/a_float_for_an_integer_width_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/widths.toml"
+6 | |
+7 | |     [size]
+8 | |     size.ratio: u8
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

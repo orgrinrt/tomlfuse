@@ -4,92 +4,12 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::comments::extract_comments;
-use crate::field::TomlFields;
 use crate::pattern::Pattern;
-use crate::utils;
-use globset::{Glob, GlobSetBuilder};
-
-/// Finds the toml file and reads it, returning where it was found alongside its contents.
-///
-/// Three places are tried, in this order: the path as given, then relative to the
-/// workspace root, then relative to `CARGO_MANIFEST_DIR`. Which one succeeded matters,
-/// because the generated code registers it with cargo so that editing the file rebuilds
-/// what was generated from it.
-///
-/// The candidates used to be the three arms of nested `unwrap_or` calls, which evaluate
-/// their argument whether or not it is needed, so every module read the file from all
-/// three places every time. `or_else` reads one.
-///
-/// A path matching none of them used to become `unwrap_or_default()`, an empty string,
-/// which parses as an empty toml and generates an empty module. A mistyped path was
-/// therefore silent.
-fn resolve_toml(toml_path: &str) -> (PathBuf, String) {
-    let manifest_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("Expected CARGO_MANIFEST_DIR to be in env"),
-    );
-
-    // Relative to the crate first, then to the workspace. Not relative to the current
-    // directory, which this used to try before either: a proc macro runs inside the compiler
-    // and the current directory is wherever cargo happened to be invoked. That worked by
-    // coincidence, because the default target directory sits inside the crate and
-    // `find_workspace_root` climbs back out of it, and it stopped the moment
-    // `CARGO_TARGET_DIR` pointed anywhere else, which CI routinely does.
-    //
-    // An absolute path is taken as given, since neither join would change it.
-    let given = PathBuf::from(toml_path);
-    let mut candidates: Vec<PathBuf> = if given.is_absolute() {
-        vec![given]
-    } else {
-        vec![manifest_dir.join(toml_path), utils::find_workspace_root().join(toml_path)]
-    };
-
-    // `find_workspace_root` falls back to the manifest directory, so for a crate that is not
-    // in a workspace the two are the same path. Printing it twice under prose promising two
-    // different strategies is what the old message did.
-    candidates.dedup();
-
-    for candidate in &candidates {
-        if let Ok(contents) = fs::read_to_string(candidate) {
-            // Absolute, because the generated `include_bytes!` resolves relative to the
-            // file the macro was invoked in, not to the crate root. A relative path
-            // therefore doubled up: `tests/test.toml` became `tests/tests/test.toml`.
-            let absolute = fs::canonicalize(candidate).unwrap_or_else(|_| candidate.clone());
-            return (absolute, contents);
-        }
-    }
-
-    panic!(
-        "tomlfuse: could not read `{toml_path}`. Looked in:\n  {}\nA relative path is taken \
-         relative to the crate, then to the workspace root.",
-        candidates
-            .iter()
-            .map(|c| c.display().to_string())
-            .collect::<Vec<_>>()
-            .join("\n  ")
-    )
-}
-
-/// Turns one pattern into a glob, saying which pattern and why when it will not.
-fn compile_glob(pattern: &crate::pattern::Pattern) -> Glob {
-    let text = pattern.to_string();
-    Glob::new(&text).unwrap_or_else(|e| {
-        panic!(
-            "tomlfuse: `{text}` is not a valid pattern. {e}\n\
-             Patterns are globs over dotted toml paths: `*` matches one segment, `**` any \
-             number, `{{a,b}}` either, `[a-z]` one character, and a leading `!` excludes."
-        )
-    })
-}
 use proc_macro2::Ident;
-use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, ToTokens};
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::{env, fs};
 use syn::parse::{Parse, ParseStream};
 use syn::{token, Result as SynResult, Token};
-use toml::Value;
+use tomlfuse_core::{Section, Width};
 
 mod kw {
     syn::custom_keyword!(alias);
@@ -110,120 +30,48 @@ pub struct RootModuleSource {
     pub exclusion_pats: Vec<Pattern>,
     /// Map of pattern aliases where key is the alias and value is the original pattern
     pub aliases: HashMap<Pattern, Pattern>,
-    /// Comments extracted from the TOML file, keyed by field path
-    pub comments: HashMap<String, String>,
-    /// Where the toml was actually found, once it has been read.
-    ///
-    /// Kept so the generated code can register the file with cargo. Without that, editing
-    /// the toml changes nothing until something else forces the crate to rebuild, and the
-    /// constants a build produces are silently the previous file's.
-    pub resolved_path: Option<PathBuf>,
+    /// The type to bind the keys a pattern selects as, for the patterns that named one
+    pub widths: Vec<(Pattern, Width)>,
 }
 
-/// Root module that generates code from TOML data.
-///
-/// Combines the configuration from `RootModuleSource` with parsed TOML data
-/// to generate a Rust module with constants reflecting the TOML structure.
-///
-#[derive(Clone, Debug)]
-pub struct RootModule<'a> {
-    /// Source configuration from macro input
-    pub source: RootModuleSource,
-    pub toml: Value,
-    pub fields: TomlFields<'a>,
-}
-
-impl<'a> RootModule<'a> {
-    pub fn new(mut source: RootModuleSource, toml_path: &'a str) -> Self {
-        // attempt to read the TOML file from:
-        // 1. direct path
-        // 2. relative to workspace root
-        // 3. relative to CARGO_MANIFEST_DIR
-        //
-        // this allows for flexibility in specifying the TOML path while
-        // still providing reasonable defaults without requiring absolute paths
-        // for common scenarios like referencing Cargo.toml
-        let (resolved, toml_raw) = resolve_toml(toml_path);
-        let toml: Value = toml_raw
-            .parse()
-            .unwrap_or_else(|_| panic!("Failed to parse toml file: {}", toml_path));
-        source.comments = extract_comments(&toml_raw);
-        source.resolved_path = Some(resolved);
-        RootModule::from(source).with_toml(toml).build()
-    }
-
-    /// Sets the parsed TOML value for this module.
-    pub fn with_toml(self, toml: Value) -> Self {
-        RootModule {
-            toml,
-            ..self
-        }
-    }
-
-    /// Builds the final module by applying patterns and extracting fields.
-    ///
-    /// This method:
-    /// 1. Converts patterns to glob matchers
-    /// 2. Extracts fields matching the patterns from the TOML data
-    pub fn build(self) -> Self {
-        let mut inclusions = GlobSetBuilder::new();
-        let mut exclusions = GlobSetBuilder::new();
-        let mut literals: Vec<String> = Vec::new();
-        // A proc-macro panic reaches the user with its message attached, so the message is
-        // the whole diagnostic. "Expected a valid glob pat string" named neither the
-        // pattern nor what globset objected to, leaving nothing to act on.
-        for pattern in &self.source.inclusion_pats {
-            inclusions.add(compile_glob(pattern));
-            literals.push(pattern.to_string());
-        }
-        for pattern in &self.source.exclusion_pats {
-            exclusions.add(compile_glob(pattern));
-            literals.push(format!("!{}", pattern));
-        }
-        let fields = TomlFields::from(self.toml.clone())
-            .with_inclusion_globs(Some(
-                inclusions
-                    .build()
-                    .expect("Expected a succesful glob set build"),
-            ))
-            .with_exclusion_globs(Some(
-                exclusions
-                    .build()
-                    .expect("Expected a succesful glob set build"),
-            ))
-            .with_pat_literals(literals)
-            .with_comments(
-                self.source
-                    .comments
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-            )
-            .with_aliases(Some(self.source.aliases.clone()));
-        RootModule {
-            fields: fields.build(),
-            ..self
+impl RootModuleSource {
+    /// The same selection, in the terms `tomlfuse-core` binds by.
+    pub fn section(&self) -> Section {
+        let core = |p: &Pattern| tomlfuse_core::Pattern::new(p.to_string());
+        Section {
+            name: self.name.to_string(),
+            include: self.inclusion_pats.iter().map(core).collect(),
+            exclude: self.exclusion_pats.iter().map(core).collect(),
+            aliases: self
+                .aliases
+                .iter()
+                .map(|(alias, orig)| (core(alias), core(orig)))
+                .collect(),
+            widths: self
+                .widths
+                .iter()
+                .map(|(pattern, width)| (core(pattern), *width))
+                .collect(),
         }
     }
 }
 
-impl<'a> From<RootModuleSource> for RootModule<'a> {
-    fn from(source: RootModuleSource) -> Self {
-        RootModule {
-            source,
-            toml: Value::Table(Default::default()),
-            fields: TomlFields::new(),
-        }
+/// Reads the `: u8` that can follow a pattern, if there is one.
+fn parse_width(input: ParseStream) -> SynResult<Option<Width>> {
+    if !input.peek(Token![:]) {
+        return Ok(None);
     }
-}
-impl<'a> From<&'a RootModuleSource> for RootModule<'a> {
-    fn from(source: &'a RootModuleSource) -> Self {
-        RootModule {
-            source: source.clone(),
-            toml: Value::Table(Default::default()),
-            fields: TomlFields::new(),
-        }
-    }
+    input.parse::<Token![:]>()?;
+    let name: Ident = input.parse()?;
+    Width::parse(&name.to_string()).map(Some).ok_or_else(|| {
+        syn::Error::new(
+            name.span(),
+            format!(
+                "tomlfuse: `{name}` is not a width. Use one of {}.",
+                Width::NAMES.join(", ")
+            ),
+        )
+    })
 }
 
 impl Parse for RootModuleSource {
@@ -234,6 +82,7 @@ impl Parse for RootModuleSource {
         let mut inclusion_pats = Vec::new();
         let mut exclusion_pats = Vec::new();
         let mut aliases: HashMap<Pattern, Pattern> = HashMap::new();
+        let mut widths: Vec<(Pattern, Width)> = Vec::new();
 
         while !input.peek(token::Bracket) && !input.is_empty() {
             if input.peek(kw::alias) {
@@ -241,13 +90,25 @@ impl Parse for RootModuleSource {
                 let alias: Pattern = input.parse()?;
                 let _eq: token::Eq = input.parse()?;
                 let path: Pattern = input.parse()?;
+                // The width is of the original key, whatever it goes by.
+                if let Some(width) = parse_width(input)? {
+                    widths.push((path.clone(), width));
+                }
                 aliases.insert(alias, path);
             } else if input.peek(Token![!]) {
                 let _negation: Token![!] = input.parse()?;
                 let pattern = Pattern::parse(input)?;
+                if input.peek(Token![:]) {
+                    return Err(input.error(
+                        "an exclusion leaves keys out, so there is nothing to give a width to",
+                    ));
+                }
                 exclusion_pats.push(pattern)
             } else {
                 let pattern = Pattern::parse(input)?;
+                if let Some(width) = parse_width(input)? {
+                    widths.push((pattern.clone(), width));
+                }
                 inclusion_pats.push(pattern);
             }
         }
@@ -256,77 +117,7 @@ impl Parse for RootModuleSource {
             inclusion_pats,
             exclusion_pats,
             aliases,
-            comments: HashMap::new(),
-            // Filled in when the file is read, which happens after parsing.
-            resolved_path: None,
+            widths,
         })
-    }
-}
-
-impl<'a> ToTokens for RootModule<'a> {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let fields = &self.fields;
-        let root_mod_name = &self.source.name;
-
-        // Register the toml with cargo, so that editing it rebuilds what was generated
-        // from it. A procedural macro reads files behind cargo's back: nothing in a macro
-        // invocation tells it that the output depends on anything but the source file the
-        // invocation sits in. Without this, editing the toml and rebuilding leaves the old
-        // constants in place, and the build reports success.
-        //
-        // `include_bytes!` is what does it. `proc_macro::tracked_path` is the direct way
-        // and is unstable. The bytes are bound to an anonymous constant, so this costs a
-        // name nobody can collide with and nothing at runtime.
-        let tracker = self.source.resolved_path.as_ref().map(|path| {
-            let path = path.to_string_lossy();
-            let path = syn::LitStr::new(&path, proc_macro2::Span::call_site());
-            quote! {
-                const _: &[u8] = include_bytes!(#path);
-            }
-        });
-
-        // A section is named in the macro invocation rather than in the toml, so there is no
-        // comment anywhere that could document it, and it shipped with none. That made this
-        // crate unusable from any crate carrying `#![deny(missing_docs)]`: the lint fires on
-        // the generated module, spanned at the invocation, where no `#[allow]` the consumer
-        // writes can reach it. Saying where the contents came from is the documentation a
-        // reader of `cargo doc` wanted anyway.
-        let root_mod_doc = {
-            let text = match self.source.resolved_path.as_ref() {
-                Some(path) => format!(
-                    "Constants bound from `{}`.",
-                    path.file_name()
-                        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
-                ),
-                None => "Constants bound from a toml file.".to_string(),
-            };
-            quote! { #[doc = #text] }
-        };
-
-        tokens.extend(quote! {
-            #tracker
-            // Lints that fire on a value rather than on how it was written do not belong
-            // on generated code: the value came from the consumer's toml and the code
-            // came from here, so neither party can act on the diagnostic. A toml holding
-            // 3.14159 made `clippy::approx_constant` a deny-level error spanned at the
-            // macro invocation, which no `#[allow]` in the consumer's own source reaches.
-            //
-            // `missing_docs` is the same thing pointed at documentation. A comment in the
-            // toml becomes a `#[doc]` and shows up in `cargo doc`, which is the feature; a
-            // key without one is a key somebody chose not to comment, and their config file
-            // is not the place a crate's documentation policy belongs. It is unsatisfiable
-            // besides, since a table that a dotted key brings into being has nowhere to put
-            // a comment: `a.b = 1` documents `b`, and `a` never gets a line of its own.
-            #[allow(
-                clippy::approx_constant,
-                clippy::excessive_precision,
-                clippy::unreadable_literal,
-                missing_docs,
-            )]
-            #root_mod_doc
-            pub mod #root_mod_name {
-                #fields
-            }
-        });
     }
 }

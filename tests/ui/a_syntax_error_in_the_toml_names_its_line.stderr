@@ -1,0 +1,18 @@
+error: tomlfuse: could not parse `tests/ui/malformed.toml`:
+       TOML parse error at line 4, column 14
+         |
+       4 | frame_rate = = 30
+         |              ^
+       invalid string
+       expected `"`, `'`
+ --> tests/ui/a_syntax_error_in_the_toml_names_its_line.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/malformed.toml"
+6 | |
+7 | |     [engine]
+8 | |     engine.*
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

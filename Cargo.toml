@@ -21,7 +21,7 @@ homepage = "https://github.com/orgrinrt/tomlfuse"
 repository = "https://github.com/orgrinrt/tomlfuse"
 
 [workspace]
-members = []
+members = ["tomlfuse-core"]
 
 [workspace.metadata]
 # Read by tests/integration_test_workspace.rs, which had no workspace to read before this.
@@ -34,10 +34,12 @@ maintenance = { status = "actively-developed" }
 [features]
 default = []
 # What a `package!`, `workspace!` or `file!` invocation expands into names nothing outside
-# `core`. Every value becomes a `pub const` of `&'static str`, `&'static [T]`, `i64`, `f64`
-# or `bool`, wrapped in `pub mod` and doc comments, plus one `include_bytes!` that binds the
-# toml as a build input. None of that is `std`, so a `#![no_std]` consumer with no allocator
-# gets working constants today and got them before this feature existed.
+# `core`. Every value becomes a `pub const` of `&'static str`, `bool`, an integer or a float
+# (`i64` and `f64` unless the macro input names one of the other eight widths), `&'static [T]`
+# of those, or `[T; N]` where a width turns an array into a fixed one, wrapped in `pub mod`
+# and doc comments, plus one `include_bytes!` that binds the toml as a build input. None of
+# that is `std`, so a `#![no_std]` consumer with no allocator gets working constants today
+# and got them before this feature existed.
 #
 # Nothing in `src/` reads the flag, because there is nothing to switch. It exists so a
 # workspace that turns `no_std` on across every dependency can name it here without the
@@ -58,18 +60,17 @@ no_alloc = ["no_std"]
 [dev-dependencies]
 trybuild = "1.0"
 tempfile = "3.19.1"
+toml = { version = "^0.8" }
 
 [lib]
 proc-macro = true
 doctest = false # unfortunately not practical to setup the doc examples with actual toml files to load or even as inlined literals for the content
 
 [dependencies]
-toml = { version = "^0.8" }
+tomlfuse-core = { version = "0.0.5", path = "tomlfuse-core" }
 proc-macro2 = { version = "^1.0" }
 quote = { version = "^1.0" }
 syn = { version = "^2.0" }
-globset = "^0.4"
-once_cell = { version = "^1.21", features = ["std"] }
 
 # NOTE: below metadata is for test purposes only
 

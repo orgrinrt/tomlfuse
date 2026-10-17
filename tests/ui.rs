@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 /// The cases that must not compile, counted against the directory rather than against a list
 /// somebody has to remember to extend.
-const EXPECTED_FAILING: usize = 2;
+const EXPECTED_FAILING: usize = 16;
 
 /// The cases that must. There is one, and it holds the other half of what an exclusion is
 /// for: a binding has to be usable from an ordinary crate, and this one denies a lint that
@@ -45,7 +45,7 @@ const EXPECTED_PASSING: usize = 1;
 /// so it is both the workspace root and the crate root that `file!` falls back to.
 ///
 /// Under the resolved target directory rather than a literal `target/`. `CARGO_TARGET_DIR`
-/// moves it and CI routinely sets it, and this used to hardcode the name: the fixture then
+/// or a configured `build.target-dir` moves it, and this used to hardcode the name: the fixture then
 /// landed somewhere the scratch crate never reads and every case failed with the macro
 /// correctly reporting the file missing.
 fn scratch_crate() -> PathBuf {
@@ -63,11 +63,15 @@ fn scratch_crate_under(target: &std::path::Path) -> PathBuf {
 }
 
 /// Where cargo is putting build output for this run.
+///
+/// Read from `CARGO_TARGET_TMPDIR`, which cargo sets for integration tests to `tmp` under the
+/// target directory it resolved, so a `build.target-dir` in a cargo config is followed as
+/// well as `CARGO_TARGET_DIR`. Neither is a thing to guess at from the manifest directory.
 fn target_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        return PathBuf::from(dir);
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target")
+    PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .parent()
+        .expect("the tmp directory sits under the target directory")
+        .to_path_buf()
 }
 
 #[test]
@@ -93,8 +97,16 @@ fn a_binding_leaves_out_what_the_pattern_excludes() {
 
     let destination = scratch_crate().join("tests/ui");
     fs::create_dir_all(&destination).expect("the scratch fixture directory");
-    fs::copy(ui.join("fixture.toml"), destination.join("fixture.toml"))
-        .expect("the fixture copies into the scratch crate");
+    for fixture in fs::read_dir(&ui)
+        .expect("tests/ui is readable")
+        .filter_map(|e| e.ok())
+    {
+        let path = fixture.path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            fs::copy(&path, destination.join(fixture.file_name()))
+                .expect("the fixture copies into the scratch crate");
+        }
+    }
 
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/*.rs");

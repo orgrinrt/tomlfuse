@@ -1,0 +1,23 @@
+[package]
+name = "tomlfuse-core"
+version = "0.0.5"
+edition = "2021"
+rust-version = "1.88.0"
+authors = ["orgrinrt", "Hiisi Digital"]
+description = """
+Read a toml file and walk it into typed constants. The plain library behind the tomlfuse macros.
+"""
+license = "MPL-2.0"
+readme = "README.md"
+keywords = ["toml", "build-time", "constant", "codegen"]
+categories = ["development-tools", "config"]
+documentation = "https://docs.rs/tomlfuse-core"
+homepage = "https://github.com/orgrinrt/tomlfuse"
+repository = "https://github.com/orgrinrt/tomlfuse"
+
+[dependencies]
+toml = { version = "^0.8" }
+globset = "^0.4"
+
+[dev-dependencies]
+tempfile = "3.19.1"

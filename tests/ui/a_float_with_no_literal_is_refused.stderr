@@ -1,0 +1,41 @@
+error: tomlfuse: `odd.infinite` is inf, which is not a finite number and has no literal to bind as. Write a finite value.
+  --> tests/ui/a_float_with_no_literal_is_refused.rs:4:1
+   |
+ 4 | / tomlfuse::file! {
+ 5 | |     "tests/ui/nonfinite.toml"
+ 6 | |
+ 7 | |     [odd]
+...  |
+10 | |     odd.tiny: f32
+11 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: tomlfuse: `odd.not_a_number` is NaN, which is not a finite number and has no literal to bind as. Write a finite value.
+  --> tests/ui/a_float_with_no_literal_is_refused.rs:4:1
+   |
+ 4 | / tomlfuse::file! {
+ 5 | |     "tests/ui/nonfinite.toml"
+ 6 | |
+ 7 | |     [odd]
+...  |
+10 | |     odd.tiny: f32
+11 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: tomlfuse: `odd.tiny` is 1e-50, which is too small for f32 (magnitude down to 1e-45) and would become zero.
+  --> tests/ui/a_float_with_no_literal_is_refused.rs:4:1
+   |
+ 4 | / tomlfuse::file! {
+ 5 | |     "tests/ui/nonfinite.toml"
+ 6 | |
+ 7 | |     [odd]
+...  |
+10 | |     odd.tiny: f32
+11 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

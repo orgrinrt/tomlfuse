@@ -29,15 +29,20 @@ apply.
   - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
   - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
+- A type for numbers (`size.voxel_pixels: u32`), checked against the value, which also makes
+  arrays fixed arrays (`[[u8; 3]; 16]`) with their lengths read from the file
 - Preserves comments from toml as doc comments
-- Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
+- Binds strings, integers, floats, booleans and arrays of one kind, which may be arrays in turn
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
+  - a value with no constant to be, an array of mixed kinds, a table inside an array or a
+    datetime, is a `compile_error!` that names its key in the file, rather than being bound as
+    its own text
 - Works in `#![no_std]`, with or without an allocator
 
 ### `no_std` and no allocator
 
 A binding names nothing outside `core`. Every value becomes a `pub const` of `&'static str`,
-`&'static [T]`, `i64`, `f64` or `bool`, wrapped in `pub mod` and doc comments, plus one
+`&'static [T]`, `[T; N]`, an integer, a float or `bool`, wrapped in `pub mod` and doc comments, plus one
 `include_bytes!` binding the toml as a build input so editing it rebuilds what came out of it.
 None of that is `std`, and none of it allocates: a `const` lives in the binary and a
 `&'static [T]` points into it.
@@ -50,13 +55,23 @@ crate against this one with a control proving that crate genuinely has no `std` 
 This crate itself always builds with `std`. It is a proc macro, so it runs on the host inside
 the compiler.
 
+### Using the walker without the macros
+
+The toml reading and the field walker live in
+[`tomlfuse-core`](https://crates.io/crates/tomlfuse-core), a plain library that knows nothing
+about Rust tokens, and the macros here are a thin layer over it. A build script or a tool that
+wants the same constants from the same toml, in a shader header for instance, reads a `Source`,
+describes what to take in a `Section`, and gets back a tree of modules whose constants each
+carry a name, a type, a value and the comment above the key. See
+[its page on crates.io](https://crates.io/crates/tomlfuse-core) for the shape of it.
+
 ### Examples
 
 `examples/` holds one example per piece of the pattern language, each reading a slice of the
 same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
 [value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs),
-[aliases](examples/aliases.rs), [alternation](examples/alternation.rs) and
-[nesting](examples/nested_modules.rs). Two more put them together:
+[aliases](examples/aliases.rs), [alternation](examples/alternation.rs),
+[widths](examples/widths.rs) and [nesting](examples/nested_modules.rs). Two more put them together:
 [`whole_app_config`](examples/whole_app_config.rs) uses the whole language on one file, and
 [`build_metadata_and_config`](examples/build_metadata_and_config.rs) runs `package!` and
 `file!` in one binary.
@@ -107,6 +122,77 @@ fn main() {
 }
 ```
 
+### Saying what type a number is
+
+An integer binds as `i64` and a float as `f64`, so a consumer that wants a `u8`, a `u32` or an
+`f32` would write a narrowing function for each constant. A type after the pattern does it:
+
+```rust,ignore
+use tomlfuse::file;
+
+file! {
+    "path/to/engine.toml"
+
+    [size]
+    size.voxel_pixels: u32  // pub const VOXEL_PIXELS: u32
+    size.zoom: f32
+
+    [shortcuts]
+    alias frames = timing.frames: u16 // the width is of the original key
+}
+```
+
+The types are `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32` and `f64`. A value
+that does not fit, a `300` for a `u8` or a float too large for an `f32`, stops the build with a
+message naming the key, instead of wrapping into something that does. An integer is not
+widened to a float or a float narrowed to an integer, so a key written `3` cannot be an `f32`:
+write `3.0` in the file. A width on a string or a boolean is refused too, which is how a
+pattern too broad for its type is found, so `server.*: u16` over a table with a `host` in it is
+an error naming `server.host`.
+
+A float narrowed to an `f32` loses digits it did not have room for, the way any `f64` does, and
+only a magnitude it cannot hold is an error. Whether it fits is decided by narrowing it, so
+`3.4028235e38`, the largest `f32`, fits; a value that would round to infinity is an error, and
+so is a non-zero value too small to be anything but `0.0`. Infinity and NaN have no literal to
+bind as and are refused, with or without a width.
+
+The widths are the ten above and not `usize` or `isize`. Their size is the target's, and a
+procedural macro runs on the host, so it would be checking a value against a pointer width that
+may not be the one the code is built for. Bind it as `u32` or `u64` and convert where it is
+used: `as usize` works in a `const` too.
+
+A pattern that gives a width must reach at least one number in the file. One that matches no key,
+a typo like `size.voxle: u8`, or only tables, is an error naming the pattern, where it would
+otherwise leave the key it was meant for at `i64` without a word. Spell it the way the walker
+does, which is with an underscore for a dash.
+
+#### Arrays
+
+A width applies to every number in an array, and gives the array a fixed length: the lengths are
+read from the file, so a table of colours is the array an API taking one asks for.
+
+```toml
+[palette]
+world = [[34, 139, 34], [139, 69, 19], [70, 130, 180]]
+```
+
+```rust,ignore
+file! {
+    "path/to/engine.toml"
+
+    [colours]
+    palette.world: u8   // pub const WORLD: [[u8; 3]; 3]
+}
+```
+
+Add a fourth colour to the file and the type becomes `[[u8; 3]; 4]`; a colour with two channels
+is an error naming the key, since a fixed array has one length. Without a width the same value
+is what it has always been, a `&'static [&'static [i64]]`, whose rows may differ in length. An
+empty array with a width is a `[u8; 0]`.
+
+A key that two patterns give different widths is an error as well, since nothing says which was
+meant.
+
 ### Binding from package (Cargo.toml)
 
 ```rust,ignore
@@ -138,10 +224,12 @@ fn main() {
 
 ### Binding from workspace
 
-Not currently covered with tests, so not guaranteed to work, but works similar to the package example.
+Works like the package example, over the workspace's `Cargo.toml` instead of the crate's.
+[`tests/integration_test_workspace.rs`](tests/integration_test_workspace.rs) holds it to that.
 
-When the path is omitted, looks for the first toml file that contains
-`[workspace]` in the current directory and upwards until system root.
+When the path is omitted, looks for the first `Cargo.toml` that contains `[workspace]`,
+starting at the crate being built and going upwards until system root. A crate that is in no
+workspace gets its own manifest.
 
 ```rust,ignore
 use tomlfuse::workspace;
@@ -162,16 +250,19 @@ fn main() {
 
 #### Value types and patterns
 
-- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
+- An array holds one kind. A mixed one (e.g. `[1, "a", 3.14]`), a table inside an array and a
+  datetime are refused with an error naming the key, so a row meant as a record cannot quietly
+  become a string
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - This is planned for the future
-    - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
-    - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-      `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-      - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
-        *if* someone truly needs this
+  - Until now these were bound as the `Debug` or `Display` text of the value, which built
+    successfully and failed, or did not, wherever the constant was read
+  - A datetime can be written as a string in the file if its text is what is wanted
+  - Later down the line, as an optional alternative, a mixed array could translate to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
+    `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
+    - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
+      *if* someone truly needs this
   - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
 </details>
 
@@ -227,7 +318,7 @@ fn main() {
 
 ## Compatibility
 
-This crate requires rust `1.73.0` or later. With present dependencies, this is the minimum supported version the dependencies allow. Bumping msrv is considered a breaking change and will be done in a minor version.
+This crate requires rust `1.88.0` or later. That is the version `globset`, a direct dependency, declares, so it is the lowest anything that depends on this crate can build with. Bumping msrv is considered a breaking change and will be done in a minor version.
 
 ### Versioning policy
 

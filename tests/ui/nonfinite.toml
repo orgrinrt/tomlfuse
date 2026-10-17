@@ -1,0 +1,5 @@
+# One key for each float that has no literal, or that a width would make into one.
+[odd]
+infinite = inf
+not_a_number = nan
+tiny = 1e-50

@@ -1,0 +1,12 @@
+error: tomlfuse: `size.ragged` holds arrays of different lengths, 3 and 2 (at [1]). A fixed array needs them all the same; drop the width to bind it as a slice.
+ --> tests/ui/a_nested_array_with_rows_of_different_lengths_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/widths.toml"
+6 | |
+7 | |     [size]
+8 | |     size.ragged: u8
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,12 @@
+error: tomlfuse: `row.records[0]` is a table inside an array, which cannot be bound. Give each one a table of its own in the file instead.
+ --> tests/ui/a_table_in_an_array_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/unbindable.toml"
+6 | |
+7 | |     [row]
+8 | |     row.records
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

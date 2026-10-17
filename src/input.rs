@@ -4,10 +4,12 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::module::{RootModule, RootModuleSource};
-use quote::{quote, ToTokens};
+use crate::module::RootModuleSource;
+use crate::render;
+use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::{LitStr, Result as SynResult};
+use tomlfuse_core::Source;
 
 /// Parsed representation of the input to `tomlfuse` macros.
 ///
@@ -49,14 +51,43 @@ impl Parse for MacroInput {
 
 impl ToTokens for MacroInput {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let module_sources = self.root_module_sources.iter();
-        let modules = module_sources.map(move |source| {
-            RootModule::new(source.clone(), self.toml_path.as_deref().unwrap_or(""))
-        });
+        // attempt to read the TOML file from:
+        // 1. direct path
+        // 2. relative to workspace root
+        // 3. relative to CARGO_MANIFEST_DIR
+        //
+        // this allows for flexibility in specifying the TOML path while
+        // still providing reasonable defaults without requiring absolute paths
+        // for common scenarios like referencing Cargo.toml
+        let source = match Source::locate(self.toml_path.as_deref().unwrap_or("")) {
+            Ok(source) => source,
+            Err(error) => {
+                tokens.extend(render::compile_error(&error.to_string()));
+                for module_source in &self.root_module_sources {
+                    tokens.extend(render::empty_section(&module_source.name));
+                }
+                return;
+            },
+        };
 
-        tokens.extend(quote! {
-            #(#modules)*
-        });
+        tokens.extend(render::tracker(&source));
+        for module_source in &self.root_module_sources {
+            match tomlfuse_core::bind(&source, &module_source.section()) {
+                Ok(bound) => {
+                    // A value that cannot be bound is an error at the invocation, and the
+                    // rest of the section is still emitted, so one bad key does not bury
+                    // the others under errors about names that were never made.
+                    for problem in &bound.problems {
+                        tokens.extend(render::compile_error(&problem.to_string()));
+                    }
+                    tokens.extend(render::section(&module_source.name, &bound.module, &source));
+                },
+                Err(error) => {
+                    tokens.extend(render::compile_error(&error.to_string()));
+                    tokens.extend(render::empty_section(&module_source.name));
+                },
+            }
+        }
     }
 }
 
@@ -142,5 +173,30 @@ mod tests {
             tokens.contains("Constants bound from `fixture.toml`."),
             "the one doc attribute is not the section module's:\n{tokens}"
         );
+    }
+
+    /// A section that could not be bound still names a module.
+    ///
+    /// Otherwise every use of it adds an unresolved-module error to the one that says what
+    /// went wrong, and those arrive first in the reader's eye and bury it.
+    #[test]
+    fn a_file_that_cannot_be_read_still_declares_each_section_as_an_empty_module() {
+        let tokens = generated("\"tests/ui/nowhere.toml\" [first] a.* [second] b.*");
+
+        assert!(tokens.contains("compile_error"), "{tokens}");
+        assert!(tokens.contains("pub mod first { }"), "{tokens}");
+        assert!(tokens.contains("pub mod second { }"), "{tokens}");
+    }
+
+    #[test]
+    fn a_section_that_cannot_be_bound_still_declares_its_module_beside_the_others() {
+        let tokens =
+            generated("\"tests/ui/widths.toml\" [bad] size.* size.voxle: u8 [good] size.ratio");
+
+        assert!(tokens.contains("compile_error"), "{tokens}");
+        assert!(tokens.contains("pub mod bad { }"), "{tokens}");
+        assert!(tokens.contains("pub mod good {"), "{tokens}");
+        assert!(tokens.contains("pub const RATIO"), "{tokens}");
+        assert_eq!(tokens.matches("pub mod bad").count(), 1, "{tokens}");
     }
 }

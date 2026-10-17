@@ -1,0 +1,5 @@
+# One key for each shape that has no constant to bind as.
+[row]
+mixed = [1, "two", 3.0]
+records = [{ name = "a" }, { name = "b" }]
+when = 2026-10-17T09:30:00Z

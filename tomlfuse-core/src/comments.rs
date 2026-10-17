@@ -34,22 +34,17 @@ enum StringState {
 /// (e.g. `section.subsection.key`) to its concatenated comment text.
 ///
 /// ```rust
-/// # use std::collections::HashMap;
-/// # fn extract_comments(input: &'static str) -> HashMap<String, String> {
-/// #    // dummy impl because proc-macro crate can't export this function
-/// #    let mut out = HashMap::new();
-/// #    out.insert("package.version".to_string(), "header\ninline comment".to_string());
-/// #    out
-/// # }
+/// use tomlfuse_core::extract_comments;
+///
 /// let toml = r#"
-/// ​# header
 /// [package]
-/// version = "0.1.0" # inline comment
+/// ## above the key
+/// version = "0.1.0" # beside it
 /// "#;
 /// let comments = extract_comments(toml);
 /// assert_eq!(
 ///     comments.get("package.version"),
-///     Some(&"header\ninline comment".to_string())
+///     Some(&"above the key\nbeside it".to_string())
 /// );
 /// ```
 #[cold]

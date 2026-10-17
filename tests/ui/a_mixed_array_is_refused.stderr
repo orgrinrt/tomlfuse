@@ -1,0 +1,12 @@
+error: tomlfuse: `row.mixed` holds both an integer and a string, and a constant has one type. Make every element the same kind.
+ --> tests/ui/a_mixed_array_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/unbindable.toml"
+6 | |
+7 | |     [row]
+8 | |     row.mixed
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)
