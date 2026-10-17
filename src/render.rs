@@ -119,6 +119,17 @@ pub fn compile_error(message: &str) -> TokenStream2 {
     quote! { ::core::compile_error!(#message); }
 }
 
+/// The module a `[name]` block becomes when nothing could be bound into it.
+///
+/// It stands in for the one that was not made, so that every use of its name does not add an
+/// unresolved-module error to the diagnostic that says what went wrong.
+pub fn empty_section(name: &Ident) -> TokenStream2 {
+    quote! {
+        #[allow(missing_docs)]
+        pub mod #name {}
+    }
+}
+
 /// The module a `[name]` block becomes, with everything bound into it.
 pub fn section(name: &Ident, module: &Module, source: &Source) -> TokenStream2 {
     // A section is named in the macro invocation rather than in the toml, so there is no

@@ -63,6 +63,9 @@ impl ToTokens for MacroInput {
             Ok(source) => source,
             Err(error) => {
                 tokens.extend(render::compile_error(&error.to_string()));
+                for module_source in &self.root_module_sources {
+                    tokens.extend(render::empty_section(&module_source.name));
+                }
                 return;
             },
         };
@@ -79,7 +82,10 @@ impl ToTokens for MacroInput {
                     }
                     tokens.extend(render::section(&module_source.name, &bound.module, &source));
                 },
-                Err(error) => tokens.extend(render::compile_error(&error.to_string())),
+                Err(error) => {
+                    tokens.extend(render::compile_error(&error.to_string()));
+                    tokens.extend(render::empty_section(&module_source.name));
+                },
             }
         }
     }
@@ -167,5 +173,30 @@ mod tests {
             tokens.contains("Constants bound from `fixture.toml`."),
             "the one doc attribute is not the section module's:\n{tokens}"
         );
+    }
+
+    /// A section that could not be bound still names a module.
+    ///
+    /// Otherwise every use of it adds an unresolved-module error to the one that says what
+    /// went wrong, and those arrive first in the reader's eye and bury it.
+    #[test]
+    fn a_file_that_cannot_be_read_still_declares_each_section_as_an_empty_module() {
+        let tokens = generated("\"tests/ui/nowhere.toml\" [first] a.* [second] b.*");
+
+        assert!(tokens.contains("compile_error"), "{tokens}");
+        assert!(tokens.contains("pub mod first { }"), "{tokens}");
+        assert!(tokens.contains("pub mod second { }"), "{tokens}");
+    }
+
+    #[test]
+    fn a_section_that_cannot_be_bound_still_declares_its_module_beside_the_others() {
+        let tokens =
+            generated("\"tests/ui/widths.toml\" [bad] size.* size.voxle: u8 [good] size.ratio");
+
+        assert!(tokens.contains("compile_error"), "{tokens}");
+        assert!(tokens.contains("pub mod bad { }"), "{tokens}");
+        assert!(tokens.contains("pub mod good {"), "{tokens}");
+        assert!(tokens.contains("pub const RATIO"), "{tokens}");
+        assert_eq!(tokens.matches("pub mod bad").count(), 1, "{tokens}");
     }
 }
