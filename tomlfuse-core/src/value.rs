@@ -26,8 +26,19 @@ enum Shape {
 enum Clash {
     /// Different kinds of value, named for a message.
     Kinds(&'static str, &'static str),
-    /// Fixed arrays of different lengths.
-    Lengths(usize, usize),
+    /// Fixed arrays of different lengths, and how many arrays further in than the elements
+    /// that were merged they are.
+    Lengths(usize, usize, usize),
+}
+
+impl Clash {
+    /// The same clash, one array further in.
+    fn deeper(self) -> Clash {
+        match self {
+            Clash::Lengths(a, b, depth) => Clash::Lengths(a, b, depth + 1),
+            kinds => kinds,
+        }
+    }
 }
 
 impl Shape {
@@ -65,10 +76,11 @@ fn merge(a: Shape, b: Shape) -> Result<Shape, Clash> {
         (Shape::List(Some(a)), Shape::List(Some(b))) => {
             Ok(Shape::List(Some(Box::new(merge(*a, *b)?))))
         },
-        (Shape::Array(_, a), Shape::Array(_, b)) if a != b => Err(Clash::Lengths(a, b)),
-        (Shape::Array(a, len), Shape::Array(b, _)) => {
-            Ok(Shape::Array(Box::new(merge(*a, *b)?), len))
-        },
+        (Shape::Array(_, a), Shape::Array(_, b)) if a != b => Err(Clash::Lengths(a, b, 0)),
+        (Shape::Array(a, len), Shape::Array(b, _)) => Ok(Shape::Array(
+            Box::new(merge(*a, *b).map_err(Clash::deeper)?),
+            len,
+        )),
         (a, b) => Err(Clash::Kinds(a.kind(), b.kind())),
     }
 }
@@ -219,12 +231,13 @@ fn shaped(key: &str, value: &Value, width: Option<Width>) -> Result<(Shape, Lit)
                                  every element the same kind."
                             ),
                         ),
-                        Clash::Lengths(a, b) => refuse(
+                        Clash::Lengths(a, b, depth) => refuse(
                             key,
                             format!(
-                                "holds arrays of different lengths, {a} and {b} (at [{i}]). A \
+                                "holds arrays of different lengths, {a} and {b} (at [{i}]{}). A \
                                  fixed array needs them all the same; drop the width to bind it \
-                                 as a slice."
+                                 as a slice.",
+                                "[0]".repeat(depth)
                             ),
                         ),
                     })?,
@@ -580,8 +593,17 @@ mod tests {
 
         // An empty row is a row of another length, not a gap to be filled in.
         assert!(bound_at("[[], [1]]", Some("u8")).is_err());
-        // And the difference may be further in.
-        assert!(bound_at("[[[1, 2]], [[1, 2, 3]]]", Some("u8")).is_err());
+        // And the difference may be further in, where the message names the real place.
+        let err = bound_at("[[[1, 2]], [[1, 2, 3]]]", Some("u8")).unwrap_err();
+        assert!(
+            err.reason
+                .starts_with("holds arrays of different lengths, 2 and 3 (at [1][0])."),
+            "{err}"
+        );
+        let err = bound_at("[[[1]], [[1]], [[1, 2]]]", Some("u8")).unwrap_err();
+        assert!(err.reason.contains("1 and 2 (at [2][0])."), "{err}");
+        let err = bound_at("[[[[1]]], [[[1, 2]]]]", Some("u8")).unwrap_err();
+        assert!(err.reason.contains("1 and 2 (at [1][0][0])."), "{err}");
         // The same rows are fine as slices.
         assert!(bound("[[1, 2, 3], [4, 5]]").is_ok());
     }
