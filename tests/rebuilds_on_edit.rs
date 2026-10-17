@@ -16,7 +16,7 @@
 //! the constant that comes out is the new one. Calling the macro in this process cannot
 //! show it, because the staleness lives in cargo's fingerprint and not in the expansion.
 //!
-//! The consumer is a separate crate under this crate's `target/`, for the reasons
+//! The consumer is a separate crate under the build directory, for the reasons
 //! `no_std_consumer.rs` gives, and it builds into a target directory of its own so it does
 //! not wait on the lock the outer `cargo test` holds.
 
@@ -26,13 +26,13 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
-/// Where the consumer lives. Under the build directory, so `cargo clean` takes it too.
+/// Where the consumer lives. Under the build directory cargo resolved, wherever that is, so
+/// `cargo clean` takes it too. `CARGO_TARGET_TMPDIR` is that directory's `tmp`.
 fn consumer_root(name: &str) -> PathBuf {
-    PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/target/rebuild-consumers"
-    ))
-    .join(name)
+    let target = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .parent()
+        .expect("the tmp directory sits under the target directory");
+    target.join("rebuild-consumers").join(name)
 }
 
 /// Writes the consumer, which prints the one constant it binds.

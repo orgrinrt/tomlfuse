@@ -23,7 +23,7 @@
 //! it has to *fail*. If it compiles, the attribute is not doing what the other cases assume.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 
 /// The toml every consumer below reads. One value of each type the expansion can produce.
@@ -42,15 +42,14 @@ grid = [[1, 2, 3], [4, 5, 6]]
 /// Writes a consumer crate and builds it against this one at `features`.
 ///
 /// Returns whether it compiled, and what cargo said when it did not. The crate is written
-/// under this crate's own target directory, so `cargo clean` takes it with everything else,
+/// under the build directory cargo resolved, so `cargo clean` takes it with everything else,
 /// and it builds into a target directory of its own so it does not fight the outer
 /// `cargo test` for the build lock.
 fn consumer_compiles(name: &str, features: &[&str], body: &str) -> (bool, String) {
-    let root = PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/target/no-std-consumers"
-    ))
-    .join(name);
+    let target = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .parent()
+        .expect("the tmp directory sits under the target directory");
+    let root = target.join("no-std-consumers").join(name);
     fs::create_dir_all(root.join("src")).expect("the consumer directory");
     fs::write(root.join("surface.toml"), FIXTURE).expect("the consumer fixture");
 
