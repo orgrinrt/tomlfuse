@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 /// The cases that must not compile, counted against the directory rather than against a list
 /// somebody has to remember to extend.
-const EXPECTED_FAILING: usize = 15;
+const EXPECTED_FAILING: usize = 16;
 
 /// The cases that must. There is one, and it holds the other half of what an exclusion is
 /// for: a binding has to be usable from an ordinary crate, and this one denies a lint that
