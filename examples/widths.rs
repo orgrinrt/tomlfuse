@@ -15,6 +15,9 @@
 //! key, rather than wrapping to a port that is not the one in the file. The same goes for a
 //! pattern too broad for its width: `server.*: u16` would refuse `server.host`, which is a
 //! string.
+//!
+//! An array takes the width too, and becomes a fixed array whose lengths are the file's, so a
+//! table of colours is the `[[u8; 3]; 4]` an API taking one asks for.
 
 use tomlfuse::file;
 
@@ -35,6 +38,17 @@ file! {
     // And one width can cover several keys.
     [limits]
     limits.*: u64
+
+    // Rows of three channels come out as `[[u8; 3]; 4]`, with both lengths read from the file.
+    // A fifth row in the file makes it a `[[u8; 3]; 5]`, and a row with two channels is an
+    // error, since a fixed array has one length.
+}
+
+file! {
+    "examples/palette.toml"
+
+    [colours]
+    palette.world: u8
 }
 
 fn main() {
@@ -45,9 +59,13 @@ fn main() {
     let sample_rate: f32 = sampling::SAMPLE_RATE;
     let pool: u8 = shortcuts::POOL;
     let body: u64 = limits::MAX_BODY_BYTES;
+    let world: [[u8; 3]; 4] = colours::WORLD;
 
     println!("port {port}, timeout {timeout}s");
     println!("sampling {sample_rate}");
     println!("pool of {pool}");
     println!("bodies up to {body} bytes, {} connections", limits::MAX_CONNECTIONS);
+    for (i, [r, g, b]) in world.into_iter().enumerate() {
+        println!("colour {i} is #{r:02x}{g:02x}{b:02x}");
+    }
 }

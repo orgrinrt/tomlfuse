@@ -29,7 +29,8 @@ apply.
   - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
   - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
-- A type for numbers (`size.voxel_pixels: u32`), checked against the value
+- A type for numbers (`size.voxel_pixels: u32`), checked against the value, which also makes
+  arrays fixed arrays (`[[u8; 3]; 16]`) with their lengths read from the file
 - Preserves comments from toml as doc comments
 - Binds strings, integers, floats, booleans and arrays of one kind, which may be arrays in turn
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
@@ -41,7 +42,7 @@ apply.
 ### `no_std` and no allocator
 
 A binding names nothing outside `core`. Every value becomes a `pub const` of `&'static str`,
-`&'static [T]`, `i64`, `f64` or `bool`, wrapped in `pub mod` and doc comments, plus one
+`&'static [T]`, `[T; N]`, an integer, a float or `bool`, wrapped in `pub mod` and doc comments, plus one
 `include_bytes!` binding the toml as a build input so editing it rebuilds what came out of it.
 None of that is `std`, and none of it allocates: a `const` lives in the binary and a
 `&'static [T]` points into it.
@@ -148,8 +149,32 @@ write `3.0` in the file. A width on a string or a boolean is refused too, which 
 pattern too broad for its type is found, so `server.*: u16` over a table with a `host` in it is
 an error naming `server.host`.
 
-A width applies to every number in an array. A `f32` loses digits it did not have room for, the
-way any `f64` does when it is narrowed, and only a magnitude it cannot hold is an error.
+A float narrowed to an `f32` loses digits it did not have room for, the way any `f64` does, and
+only a magnitude it cannot hold is an error.
+
+#### Arrays
+
+A width applies to every number in an array, and gives the array a fixed length: the lengths are
+read from the file, so a table of colours is the array an API taking one asks for.
+
+```toml
+[palette]
+world = [[34, 139, 34], [139, 69, 19], [70, 130, 180]]
+```
+
+```rust,ignore
+file! {
+    "path/to/engine.toml"
+
+    [colours]
+    palette.world: u8   // pub const WORLD: [[u8; 3]; 3]
+}
+```
+
+Add a fourth colour to the file and the type becomes `[[u8; 3]; 4]`; a colour with two channels
+is an error naming the key, since a fixed array has one length. Without a width the same value
+is what it has always been, a `&'static [&'static [i64]]`, whose rows may differ in length. An
+empty array with a width is a `[u8; 0]`.
 
 A key that two patterns give different widths is an error as well, since nothing says which was
 meant.

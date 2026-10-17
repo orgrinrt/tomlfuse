@@ -34,6 +34,9 @@ count = 3
 ratio = 1.5
 flag = true
 list = ["one", "two"]
+narrow = 7
+single = 0.5
+grid = [[1, 2, 3], [4, 5, 6]]
 "#;
 
 /// Writes a consumer crate and builds it against this one at `features`.
@@ -98,6 +101,9 @@ tomlfuse::file! {
     "surface.toml"
     [surface]
     surface.*
+    surface.narrow: u8
+    surface.single: f32
+    surface.grid: u8
 }
 
 pub const TEXT: &str = surface::TEXT;
@@ -105,6 +111,9 @@ pub const COUNT: i64 = surface::COUNT;
 pub const RATIO: f64 = surface::RATIO;
 pub const FLAG: bool = surface::FLAG;
 pub const LIST: &[&str] = surface::LIST;
+pub const NARROW: u8 = surface::NARROW;
+pub const SINGLE: f32 = surface::SINGLE;
+pub const GRID: [[u8; 3]; 2] = surface::GRID;
 "#;
 
 #[test]

@@ -1,0 +1,9 @@
+# Read by examples/widths.rs. Colours are rows of three channels.
+[palette]
+# The first four of the world's colours, as red, green and blue.
+world = [
+    [34, 139, 34],
+    [139, 69, 19],
+    [70, 130, 180],
+    [210, 180, 140],
+]

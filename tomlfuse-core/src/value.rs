@@ -17,6 +17,17 @@ enum Shape {
     Leaf(Ty),
     /// An array, whose elements are of this shape, or of none yet when it is empty.
     List(Option<Box<Shape>>),
+    /// An array of exactly this length, whose elements are all of this shape. An empty one
+    /// holds the width's type, since the width is what says what it would have held.
+    Array(Box<Shape>, usize),
+}
+
+/// Why two shapes are not one.
+enum Clash {
+    /// Different kinds of value, named for a message.
+    Kinds(&'static str, &'static str),
+    /// Fixed arrays of different lengths.
+    Lengths(usize, usize),
 }
 
 impl Shape {
@@ -26,6 +37,7 @@ impl Shape {
             // Nothing says what an array that stayed empty holds, and `&[]` is every type.
             Shape::List(None) => Ty::Slice(Box::new(Ty::Str)),
             Shape::List(Some(elem)) => Ty::Slice(Box::new(elem.into_ty())),
+            Shape::Array(elem, len) => Ty::Array(Box::new(elem.into_ty()), len),
         }
     }
 
@@ -36,20 +48,24 @@ impl Shape {
             Shape::Leaf(Ty::Int(_)) => "an integer",
             Shape::Leaf(Ty::Float(_)) => "a float",
             Shape::Leaf(Ty::Bool) => "a boolean",
-            Shape::Leaf(Ty::Slice(_)) | Shape::List(_) => "an array",
+            Shape::Leaf(Ty::Slice(_) | Ty::Array(..)) | Shape::List(_) | Shape::Array(..) => {
+                "an array"
+            },
         }
     }
 }
 
 /// The one shape two shapes agree on, or the two kinds that do not.
-fn merge(a: Shape, b: Shape) -> Result<Shape, (&'static str, &'static str)> {
+fn merge(a: Shape, b: Shape) -> Result<Shape, Clash> {
     match (a, b) {
         (Shape::Leaf(a), Shape::Leaf(b)) if a == b => Ok(Shape::Leaf(a)),
         (Shape::List(None), Shape::List(other)) | (Shape::List(other), Shape::List(None)) => {
             Ok(Shape::List(other))
         },
         (Shape::List(Some(a)), Shape::List(Some(b))) => Ok(Shape::List(Some(Box::new(merge(*a, *b)?)))),
-        (a, b) => Err((a.kind(), b.kind())),
+        (Shape::Array(_, a), Shape::Array(_, b)) if a != b => Err(Clash::Lengths(a, b)),
+        (Shape::Array(a, len), Shape::Array(b, _)) => Ok(Shape::Array(Box::new(merge(*a, *b)?), len)),
+        (a, b) => Err(Clash::Kinds(a.kind(), b.kind())),
     }
 }
 
@@ -63,7 +79,7 @@ fn refuse(key: &str, reason: impl Into<String>) -> Problem {
 /// Converts a toml `Value` into the type it binds as and the value it binds to.
 ///
 /// Supports strings, integers, floats, booleans and arrays of one kind, which may be arrays
-/// in turn. An integer is bound as `i64` and a float as `f64` unless `width` names another
+/// in turn, which are slices, or fixed arrays when `width` is given. An integer is bound as `i64` and a float as `f64` unless `width` names another
 /// type, which every number in the value is then bound as, and which a number that does not
 /// fit is a [`Problem`] for. Anything else has no constant to bind as and is a [`Problem`]
 /// naming `key`: an
@@ -163,19 +179,38 @@ fn shaped(key: &str, value: &Value, width: Option<Width>) -> Result<(Shape, Lit)
                 let (elem_shape, elem_lit) = shaped(&format!("{key}[{i}]"), elem, width)?;
                 shape = Some(match shape {
                     None => elem_shape,
-                    Some(so_far) => merge(so_far, elem_shape).map_err(|(a, b)| {
-                        refuse(
+                    Some(so_far) => merge(so_far, elem_shape).map_err(|clash| match clash {
+                        Clash::Kinds(a, b) => refuse(
                             key,
                             format!(
                                 "holds both {a} and {b}, and a constant has one type. Make \
                                  every element the same kind."
                             ),
-                        )
+                        ),
+                        Clash::Lengths(a, b) => refuse(
+                            key,
+                            format!(
+                                "holds arrays of different lengths, {a} and {b} (at [{i}]). A \
+                                 fixed array needs them all the same; drop the width to bind it \
+                                 as a slice."
+                            ),
+                        ),
                     })?,
                 });
                 elems.push(elem_lit);
             }
-            Ok((Shape::List(shape.map(Box::new)), Lit::List(elems)))
+            Ok((
+                match width {
+                    // The width is given, so the lengths are the file's and the type is a
+                    // fixed array of them.
+                    Some(width) => Shape::Array(
+                        Box::new(shape.unwrap_or(Shape::Leaf(width.ty()))),
+                        elems.len(),
+                    ),
+                    None => Shape::List(shape.map(Box::new)),
+                },
+                Lit::List(elems),
+            ))
         },
     }
 }
@@ -369,13 +404,52 @@ mod tests {
         assert!(err.reason.starts_with("is a boolean"), "{err}");
     }
 
+    fn array(of: Ty, len: usize) -> Ty {
+        Ty::Array(Box::new(of), len)
+    }
+
     #[test]
     fn the_width_reaches_every_number_in_an_array_and_names_the_one_that_does_not_fit() {
-        let (ty, _) = bound_at("[[1, 2], [3]]", Some("u8")).unwrap();
-        assert_eq!(ty, slice(slice(Ty::Int(IntTy::U8))));
+        let (ty, _) = bound_at("[[1, 2], [3, 4]]", Some("u8")).unwrap();
+        assert_eq!(ty, array(array(Ty::Int(IntTy::U8), 2), 2));
 
         let err = bound_at("[[1, 2], [3, 300]]", Some("u8")).unwrap_err();
         assert_eq!(err.key, "value[1][1]");
         assert!(err.reason.contains("does not fit u8"), "{err}");
+    }
+
+    #[test]
+    fn an_array_with_a_width_is_fixed_at_the_length_the_file_gave_it() {
+        let (ty, val) = bound_at("[1, 2, 3]", Some("u8")).unwrap();
+        assert_eq!(ty, array(Ty::Int(IntTy::U8), 3));
+        assert_eq!(val, Lit::List(vec![Lit::Int(1), Lit::Int(2), Lit::Int(3)]));
+
+        // Both lengths, the outer and the inner.
+        let (ty, _) = bound_at("[[1, 2, 3], [4, 5, 6]]", Some("u8")).unwrap();
+        assert_eq!(ty, array(array(Ty::Int(IntTy::U8), 3), 2));
+
+        // Without a width the same value is the slices it always was.
+        let (ty, _) = bound("[[1, 2, 3], [4, 5, 6]]").unwrap();
+        assert_eq!(ty, slice(slice(INT)));
+    }
+
+    #[test]
+    fn an_empty_array_with_a_width_is_an_empty_array_of_the_width() {
+        assert_eq!(bound_at("[]", Some("u8")).unwrap().0, array(Ty::Int(IntTy::U8), 0));
+        assert_eq!(bound_at("[[], []]", Some("f32")).unwrap().0, array(array(Ty::Float(FloatTy::F32), 0), 2));
+    }
+
+    #[test]
+    fn rows_of_different_lengths_cannot_be_a_fixed_array() {
+        let err = bound_at("[[1, 2, 3], [4, 5]]", Some("u8")).unwrap_err();
+        assert_eq!(err.key, "value");
+        assert!(err.reason.starts_with("holds arrays of different lengths, 3 and 2 (at [1])."), "{err}");
+
+        // An empty row is a row of another length, not a gap to be filled in.
+        assert!(bound_at("[[], [1]]", Some("u8")).is_err());
+        // And the difference may be further in.
+        assert!(bound_at("[[[1, 2]], [[1, 2, 3]]]", Some("u8")).is_err());
+        // The same rows are fine as slices.
+        assert!(bound("[[1, 2, 3], [4, 5]]").is_ok());
     }
 }

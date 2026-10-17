@@ -28,6 +28,10 @@ pub fn ty(ty: &Ty) -> TokenStream2 {
             let elem = self::ty(elem);
             quote! { &'static [#elem] }
         },
+        Ty::Array(elem, len) => {
+            let elem = self::ty(elem);
+            quote! { [#elem; #len] }
+        },
     }
 }
 
@@ -64,6 +68,10 @@ pub fn lit(ty: &Ty, lit: &Lit) -> TokenStream2 {
         (Ty::Slice(elem), Lit::List(elems)) => {
             let elems = elems.iter().map(|e| self::lit(elem, e));
             quote! { &[#(#elems),*] }
+        },
+        (Ty::Array(elem, _), Lit::List(elems)) => {
+            let elems = elems.iter().map(|e| self::lit(elem, e));
+            quote! { [#(#elems),*] }
         },
         (ty, lit) => unreachable!("a {lit:?} bound as {ty:?}, which core does not produce"),
     }
@@ -259,6 +267,19 @@ mod tests {
         assert!(list.contains("\"b\""));
         // this is proper form because tokens display with space delims
         assert_eq!(lit(&strings, &Lit::List(vec![])).to_string(), "& []");
+    }
+
+    #[test]
+    fn a_fixed_array_has_its_length_in_its_type_and_no_reference_in_its_value() {
+        let inner = Ty::Array(Box::new(Ty::Int(IntTy::U8)), 3);
+        let outer = Ty::Array(Box::new(inner), 2);
+        let row = |a, b, c| Lit::List(vec![Lit::Int(a), Lit::Int(b), Lit::Int(c)]);
+
+        assert_eq!(ty(&outer).to_string(), "[[u8 ; 3usize] ; 2usize]");
+        assert_eq!(
+            lit(&outer, &Lit::List(vec![row(1, 2, 3), row(4, 5, 6)])).to_string(),
+            "[[1u8 , 2u8 , 3u8] , [4u8 , 5u8 , 6u8]]"
+        );
     }
 
     #[test]

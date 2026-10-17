@@ -134,6 +134,14 @@ impl Width {
             Width::Float(ty) => ty.name(),
         }
     }
+
+    /// The constant type a number of this width is.
+    pub fn ty(self) -> Ty {
+        match self {
+            Width::Int(ty) => Ty::Int(ty),
+            Width::Float(ty) => Ty::Float(ty),
+        }
+    }
 }
 
 /// The type a constant has.
@@ -149,6 +157,9 @@ pub enum Ty {
     Float(FloatTy),
     /// A list of one type, of whatever length the file gave it.
     Slice(Box<Ty>),
+    /// A list of one type and a length the file gave it, which is what an array becomes when
+    /// its numbers are given a width.
+    Array(Box<Ty>, usize),
 }
 
 /// The value a constant has. Which of its forms it takes follows from its [`Ty`].
