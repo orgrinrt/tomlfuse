@@ -5,10 +5,11 @@
 //------------------------------------------------------------------------------
 
 use crate::error::{Error, Problem};
-use crate::field::{TomlFields, WidthRule};
+use crate::fields::TomlFields;
 use crate::model::{Module, Width};
 use crate::pattern::Pattern;
 use crate::source::Source;
+use crate::widths::WidthRule;
 use globset::GlobSetBuilder;
 use std::collections::HashMap;
 
@@ -251,5 +252,27 @@ mod tests {
         )
         .unwrap();
         assert!(bound.problems.is_empty(), "{:?}", bound.problems);
+    }
+
+    #[test]
+    fn a_nan_is_a_problem_and_loses_neither_its_siblings_nor_its_table() {
+        // A float that is not equal to itself used to make its own field unfindable, and the
+        // table around it too, so the walker panicked looking for either.
+        let source = source("[odd]\nfine = 1\nnot-a-number = nan\n[odd.inner]\nalso = 2\n");
+
+        let bound = bind(&source, &section(&["odd.**"])).unwrap();
+
+        assert_eq!(bound.problems.len(), 1, "{:?}", bound.problems);
+        assert_eq!(bound.problems[0].key, "odd.not-a-number");
+        let names = |module: &Module| {
+            module
+                .consts
+                .iter()
+                .map(|c| c.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&bound.module), ["FINE"]);
+        assert_eq!(bound.module.modules.len(), 1);
+        assert_eq!(names(&bound.module.modules[0]), ["ALSO"]);
     }
 }

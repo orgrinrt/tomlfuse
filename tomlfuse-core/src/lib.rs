@@ -9,12 +9,15 @@
 mod bind;
 mod comments;
 mod error;
-pub mod field;
+mod field;
+mod fields;
 mod model;
 mod names;
 mod pattern;
 mod source;
+mod tree;
 mod value;
+mod widths;
 
 pub use bind::{bind, Bound, Section};
 pub use comments::extract_comments;
