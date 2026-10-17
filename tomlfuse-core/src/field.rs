@@ -5,7 +5,8 @@
 //------------------------------------------------------------------------------
 
 use crate::model::{Const, Module};
-use crate::names::{snake_to_kebab, to_valid_ident};
+use crate::error::Problem;
+use crate::names::{join_key, snake_to_kebab, to_valid_ident};
 use crate::pattern::Pattern;
 use crate::value::bind_value;
 use globset::GlobSet;
@@ -34,6 +35,10 @@ pub struct TomlField<'a> {
     pub relative_path: Option<String>, // path relative to matched pattern
     /// Original path in the TOML file before normalization (preserves case)
     pub toml_path: Option<String>, // path in the actual toml file
+    /// The key as it is written in the file, quoted where a key needs it. Unlike the paths
+    /// above, nothing in it has been through identifier normalization, so it is the one an
+    /// error can name and a reader can search the file for.
+    pub key: String,
     /// Optional alias for the field, if specified in the macro
     pub alias: Option<String>,
     /// Index of parent field in the fields collection
@@ -52,6 +57,7 @@ impl Default for TomlField<'_> {
             path: String::default(),
             relative_path: None,
             toml_path: None,
+            key: String::default(),
             alias: None,
             parent: None,
             comment: None,
@@ -73,6 +79,7 @@ impl<'a> TomlField<'a> {
             path: path.to_string(),
             relative_path: None,
             toml_path: None,
+            key: String::default(),
             alias: None,
             parent,
             comment: None,
@@ -86,6 +93,7 @@ impl<'a> TomlField<'a> {
             path: ROOT.to_string(),
             relative_path: None,
             toml_path: None,
+            key: String::default(),
             alias: None,
             parent: None,
             comment: None,
@@ -104,6 +112,10 @@ impl<'a> TomlField<'a> {
     #[allow(dead_code)] // NOTE: might be useful later
     pub fn with_comment(mut self, comment: &str) -> Self {
         self.comment = Some(comment.to_string());
+        self
+    }
+    pub fn with_key(mut self, key: &str) -> Self {
+        self.key = key.to_string();
         self
     }
     pub fn with_alias(mut self, alias: &str) -> Self {
@@ -244,6 +256,7 @@ impl<'a> TomlFields<'a> {
                 .expect("Expected a root value when building TomlFields"),
             ROOT,
             0,
+            ROOT,
         );
 
         for i in 0..self.fields.len() {
@@ -471,12 +484,14 @@ impl<'a> TomlFields<'a> {
     /// - `value`: TOML value to extract fields from
     /// - `_path`: Current path in the TOML hierarchy
     /// - `parent_idx`: Index of the parent field (for recursion)
+    /// - `key_path`: Current path as the file writes it, for naming a field in an error
     ///
     pub fn extract_matched_paths_from_value(
         &mut self,
         value: &'a Value,
         _path: &str,
         parent_idx: usize,
+        key_path: &str,
     ) {
         let orig_path = _path.to_string();
         let alias = self.aliases.as_ref().and_then(|aliases| {
@@ -526,7 +541,8 @@ impl<'a> TomlFields<'a> {
                 Some(parent_idx),
             )
             .with_alias(alias_name.as_deref().unwrap_or(ROOT))
-            .with_toml_path(&orig_path);
+            .with_toml_path(&orig_path)
+            .with_key(key_path);
 
             (field, self.fields.len()) // idx where this field will be placed
         };
@@ -539,7 +555,8 @@ impl<'a> TomlFields<'a> {
                 for (key, val) in table.iter() {
                     let new_path =
                         if path.is_empty() { key.clone() } else { format!("{}.{}", path, key) };
-                    self.extract_matched_paths_from_value(val, &new_path, field_idx);
+                    let new_key_path = join_key(key_path, key);
+                    self.extract_matched_paths_from_value(val, &new_path, field_idx, &new_key_path);
                 }
             },
             _ => {
@@ -587,8 +604,13 @@ impl<'a> TomlFields<'a> {
     /// Turns the fields into the tree of modules and constants they bind as.
     ///
     /// Starts from the root field, which has no name of its own.
-    pub fn to_module(&self) -> Module {
-        self.module_at(0)
+    ///
+    /// A value that cannot be bound is left out of the module and comes back as a
+    /// [`Problem`], so one bad key does not hide what else is wrong or take the rest down.
+    pub fn to_module(&self) -> (Module, Vec<Problem>) {
+        let mut problems = Vec::new();
+        let module = self.module_at(0, &mut problems);
+        (module, problems)
     }
 
     /// Builds a single module from a field and its children.
@@ -596,7 +618,7 @@ impl<'a> TomlFields<'a> {
     /// Recursively builds modules for table fields and constants for value fields.
     /// The structure of the result reflects the effective module paths
     /// derived from the TOML structure and the applied patterns.
-    fn module_at(&self, idx: usize) -> Module {
+    fn module_at(&self, idx: usize, problems: &mut Vec<Problem>) -> Module {
         let field = self
             .get_field(idx)
             .expect("Expected a valid index to an existing field");
@@ -616,19 +638,18 @@ impl<'a> TomlFields<'a> {
         let relative_children_fields = self.get_relative_children_of(idx).fields;
 
         // constants for this module
-        let consts = relative_children_fields
-            .iter()
-            .filter(|f| !f.is_table())
-            .map(|f| {
-                let (ty, value) = bind_value(f.value);
-                Const {
+        let mut consts = Vec::new();
+        for f in relative_children_fields.iter().filter(|f| !f.is_table()) {
+            match bind_value(&f.key, f.value) {
+                Ok((ty, value)) => consts.push(Const {
                     name: to_valid_ident(&f.name).to_uppercase(),
                     comment: f.comment.clone(),
                     ty,
                     value,
-                }
-            })
-            .collect();
+                }),
+                Err(problem) => problems.push(problem),
+            }
+        }
 
         // submodules for recursive hierarchy
         let modules = relative_children_fields
@@ -638,6 +659,7 @@ impl<'a> TomlFields<'a> {
                 self.module_at(
                     self.index_of(submod)
                         .expect("Expected a valid child that exists and thus has an index"),
+                    problems,
                 )
             })
             .filter(|m| !m.is_empty())

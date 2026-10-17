@@ -69,10 +69,18 @@ impl ToTokens for MacroInput {
 
         tokens.extend(render::tracker(&source));
         for module_source in &self.root_module_sources {
-            tokens.extend(match tomlfuse_core::bind(&source, &module_source.section()) {
-                Ok(module) => render::section(&module_source.name, &module, &source),
-                Err(error) => render::compile_error(&error.to_string()),
-            });
+            match tomlfuse_core::bind(&source, &module_source.section()) {
+                Ok(bound) => {
+                    // A value that cannot be bound is an error at the invocation, and the
+                    // rest of the section is still emitted, so one bad key does not bury
+                    // the others under errors about names that were never made.
+                    for problem in &bound.problems {
+                        tokens.extend(render::compile_error(&problem.to_string()));
+                    }
+                    tokens.extend(render::section(&module_source.name, &bound.module, &source));
+                },
+                Err(error) => tokens.extend(render::compile_error(&error.to_string())),
+            }
         }
     }
 }

@@ -1,0 +1,10 @@
+[shapes]
+text = "a string"
+count = -3
+ratio = 1.5
+flag = true
+words = ["one", "two"]
+grid = [[1, 2, 3], [4, 5, 6]]
+ragged = [[1], [2, 3]]
+nothing = []
+holes = [[], [1, 2]]

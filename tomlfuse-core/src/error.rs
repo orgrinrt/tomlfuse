@@ -41,6 +41,26 @@ pub enum Error {
     },
 }
 
+/// A value in the file that cannot be bound as a constant.
+///
+/// This is not an [`Error`]: the rest of the section binds, and the caller decides what a
+/// value that does not is worth. The macros turn each into a `compile_error!` at the
+/// invocation, so the message arrives at the file and not wherever the constant is read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Problem {
+    /// The key as it is written in the file, with the index of the element where one is at
+    /// fault: `row.records[1]`.
+    pub key: String,
+    /// What is wrong with it, as a sentence that follows the key.
+    pub reason: String,
+}
+
+impl Display for Problem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "tomlfuse: `{}` {}", self.key, self.reason)
+    }
+}
+
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {

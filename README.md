@@ -30,8 +30,11 @@ apply.
   - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
 - Preserves comments from toml as doc comments
-- Infers and parses all types the `toml::Value` enum has variants for, including *arrays*
+- Binds strings, integers, floats, booleans and arrays of one kind, which may be arrays in turn
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
+  - a value with no constant to be, an array of mixed kinds, a table inside an array or a
+    datetime, is a `compile_error!` that names its key in the file, rather than being bound as
+    its own text
 - Works in `#![no_std]`, with or without an allocator
 
 ### `no_std` and no allocator
@@ -171,16 +174,19 @@ fn main() {
 
 #### Value types and patterns
 
-- Presently only supports homogenous arrays (e.g. `["a", "b", "c"]`), not heterogeneous (e.g. `[1, "a", 3.14]`)
+- An array holds one kind. A mixed one (e.g. `[1, "a", 3.14]`), a table inside an array and a
+  datetime are refused with an error naming the key, so a row meant as a record cannot quietly
+  become a string
 <details>
 <summary>*Click to expand notes*</summary>
 
-  - This is planned for the future
-    - Initially by converting each element to a string representation and generating an array of strings in its stead (not ideal, but leaves the door open for consumer-side implementations for this)
-    - Later down the line, as an optional alternative, by translating the array to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-      `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-      - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
-        *if* someone truly needs this
+  - Until now these were bound as the `Debug` or `Display` text of the value, which built
+    successfully and failed, or did not, wherever the constant was read
+  - A datetime can be written as a string in the file if its text is what is wanted
+  - Later down the line, as an optional alternative, a mixed array could translate to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
+    `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
+    - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
+      *if* someone truly needs this
   - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
 </details>
 

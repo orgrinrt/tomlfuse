@@ -51,9 +51,37 @@ pub fn snake_to_kebab(input: &str) -> String {
 }
 // TODO: unit test for `snake_to_kebab`, but in practice unless we expand or add to this, it should do what it says on the tin
 
+/// Joins a key onto the dotted path of the table it sits in, quoting it when it needs it.
+///
+/// This is the path as it is written in the file, which is the one a reader of an error can
+/// search for. The paths the patterns match on have been through [`to_valid_ident`] and no
+/// longer say whether a key had a dash.
+pub fn join_key(parent: &str, key: &str) -> String {
+    let bare = !key.is_empty()
+        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    let segment = if bare {
+        key.to_string()
+    } else {
+        format!("\"{}\"", key.replace('\\', "\\\\").replace('"', "\\\""))
+    };
+    if parent.is_empty() {
+        segment
+    } else {
+        format!("{parent}.{segment}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_join_key() {
+        assert_eq!(join_key("", "size"), "size");
+        assert_eq!(join_key("size", "voxel-pixels"), "size.voxel-pixels");
+        assert_eq!(join_key("a", "b.c"), "a.\"b.c\"");
+        assert_eq!(join_key("", "has space"), "\"has space\"");
+    }
 
     #[test]
     fn test_to_valid_ident() {
