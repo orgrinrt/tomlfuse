@@ -221,3 +221,57 @@ impl Module {
         self.consts.is_empty() && self.modules.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The range of each integer width, written out as numbers so that a bound taken from
+    /// the wrong type cannot agree with it.
+    const RANGES: [(&str, i128, i128); 8] = [
+        ("i8", -128, 127),
+        ("i16", -32_768, 32_767),
+        ("i32", -2_147_483_648, 2_147_483_647),
+        ("i64", -9_223_372_036_854_775_808, 9_223_372_036_854_775_807),
+        ("u8", 0, 255),
+        ("u16", 0, 65_535),
+        ("u32", 0, 4_294_967_295),
+        ("u64", 0, 18_446_744_073_709_551_615),
+    ];
+
+    #[test]
+    fn every_integer_width_holds_exactly_the_range_its_name_says() {
+        for (name, min, max) in RANGES {
+            let Some(Width::Int(ty)) = Width::parse(name) else {
+                panic!("{name} is not an integer width");
+            };
+            assert_eq!(ty.name(), name);
+            assert_eq!(ty.bounds(), (min, max), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_ranges_cover_every_integer_among_the_width_names() {
+        let ints: Vec<_> = Width::NAMES
+            .iter()
+            .filter(|name| matches!(Width::parse(name), Some(Width::Int(_))))
+            .collect();
+        assert_eq!(ints.len(), RANGES.len(), "{ints:?}");
+        for name in ints {
+            assert!(
+                RANGES.iter().any(|(n, ..)| n == name),
+                "{name} has no range above"
+            );
+        }
+    }
+
+    #[test]
+    fn every_width_name_parses_to_a_width_that_reads_back_as_it() {
+        for name in Width::NAMES {
+            let width = Width::parse(name).unwrap_or_else(|| panic!("{name} does not parse"));
+            assert_eq!(width.name(), name);
+        }
+        assert_eq!(Width::parse("usize"), None);
+        assert_eq!(Width::parse("isize"), None);
+    }
+}
