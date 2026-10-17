@@ -9,6 +9,133 @@
 //! The macros turn these into Rust tokens. A tool that wants the same constants in another
 //! language, a shader header for one, reads the same tree and writes its own text.
 
+/// An integer type a constant can be bound as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IntTy {
+    /// `i8`
+    I8,
+    /// `i16`
+    I16,
+    /// `i32`
+    I32,
+    /// `i64`, which is what an integer is bound as when no width is named.
+    I64,
+    /// `u8`
+    U8,
+    /// `u16`
+    U16,
+    /// `u32`
+    U32,
+    /// `u64`
+    U64,
+}
+
+impl IntTy {
+    /// The type's name as Rust spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            IntTy::I8 => "i8",
+            IntTy::I16 => "i16",
+            IntTy::I32 => "i32",
+            IntTy::I64 => "i64",
+            IntTy::U8 => "u8",
+            IntTy::U16 => "u16",
+            IntTy::U32 => "u32",
+            IntTy::U64 => "u64",
+        }
+    }
+
+    /// The smallest and the largest value the type holds.
+    pub fn bounds(self) -> (i128, i128) {
+        match self {
+            IntTy::I8 => (i8::MIN.into(), i8::MAX.into()),
+            IntTy::I16 => (i16::MIN.into(), i16::MAX.into()),
+            IntTy::I32 => (i32::MIN.into(), i32::MAX.into()),
+            IntTy::I64 => (i64::MIN.into(), i64::MAX.into()),
+            IntTy::U8 => (u8::MIN.into(), u8::MAX.into()),
+            IntTy::U16 => (u16::MIN.into(), u16::MAX.into()),
+            IntTy::U32 => (u32::MIN.into(), u32::MAX.into()),
+            IntTy::U64 => (u64::MIN.into(), u64::MAX.into()),
+        }
+    }
+}
+
+/// A float type a constant can be bound as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatTy {
+    /// `f32`
+    F32,
+    /// `f64`, which is what a float is bound as when no width is named.
+    F64,
+}
+
+impl FloatTy {
+    /// The type's name as Rust spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            FloatTy::F32 => "f32",
+            FloatTy::F64 => "f64",
+        }
+    }
+
+    /// The largest magnitude of a finite value the type holds.
+    pub fn largest(self) -> f64 {
+        match self {
+            FloatTy::F32 => f32::MAX.into(),
+            FloatTy::F64 => f64::MAX,
+        }
+    }
+
+    /// The same, as the shortest text that reads back as the type's own value. Converting
+    /// the `f64` above and printing it would show the digits of the widening instead.
+    pub fn largest_text(self) -> String {
+        match self {
+            FloatTy::F32 => format!("{:e}", f32::MAX),
+            FloatTy::F64 => format!("{:e}", f64::MAX),
+        }
+    }
+}
+
+/// The type a key is to be bound at, when the macro input names one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Width {
+    /// An integer type.
+    Int(IntTy),
+    /// A float type.
+    Float(FloatTy),
+}
+
+impl Width {
+    /// The names [`Width::parse`] reads, in the order an error lists them.
+    pub const NAMES: [&'static str; 10] =
+        ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"];
+
+    /// Reads a type name, or nothing when it is not one of [`Width::NAMES`].
+    pub fn parse(name: &str) -> Option<Width> {
+        Some(match name {
+            "i8" => Width::Int(IntTy::I8),
+            "i16" => Width::Int(IntTy::I16),
+            "i32" => Width::Int(IntTy::I32),
+            "i64" => Width::Int(IntTy::I64),
+            "u8" => Width::Int(IntTy::U8),
+            "u16" => Width::Int(IntTy::U16),
+            "u32" => Width::Int(IntTy::U32),
+            "u64" => Width::Int(IntTy::U64),
+            "f32" => Width::Float(FloatTy::F32),
+            "f64" => Width::Float(FloatTy::F64),
+            _ => return None,
+        })
+    }
+
+    /// The type's name as Rust spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Width::Int(ty) => ty.name(),
+            Width::Float(ty) => ty.name(),
+        }
+    }
+}
+
 /// The type a constant has.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ty {
@@ -17,9 +144,9 @@ pub enum Ty {
     /// A boolean.
     Bool,
     /// An integer.
-    Int,
+    Int(IntTy),
     /// A float.
-    Float,
+    Float(FloatTy),
     /// A list of one type, of whatever length the file gave it.
     Slice(Box<Ty>),
 }

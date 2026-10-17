@@ -4,12 +4,12 @@
 // SPDX-License-Identifier: MPL-2.0    O. R. Toimela      N2963@student.jamk.fi
 //------------------------------------------------------------------------------
 
-use crate::model::{Const, Module};
+use crate::model::{Const, Module, Width};
 use crate::error::Problem;
 use crate::names::{join_key, snake_to_kebab, to_valid_ident};
 use crate::pattern::Pattern;
 use crate::value::bind_value;
-use globset::GlobSet;
+use globset::{GlobMatcher, GlobSet};
 use std::collections::HashMap;
 use std::string::ToString;
 use std::sync::LazyLock;
@@ -218,6 +218,17 @@ impl Patterns {
     // }
 }
 
+/// A width, and the pattern that says which keys it is for.
+#[derive(Clone, Debug)]
+pub struct WidthRule {
+    /// The pattern as written, for saying which one an error is about.
+    pub pattern: Pattern,
+    /// The compiled pattern.
+    pub matcher: GlobMatcher,
+    /// The type to bind the matching keys at.
+    pub width: Width,
+}
+
 /// Collection of TOML fields with pattern matching capabilities.
 ///
 /// Central structure responsible for:
@@ -236,6 +247,7 @@ pub struct TomlFields<'a> {
     pub patterns: Patterns,
     pub aliases: Option<HashMap<Pattern, Pattern>>,
     pub comments: Option<HashMap<String, String>>,
+    pub widths: Vec<WidthRule>,
 }
 impl<'a> TomlFields<'a> {
     pub fn new() -> Self {
@@ -320,6 +332,10 @@ impl<'a> TomlFields<'a> {
     //     self.patterns.add_literal(pattern);
     //     self
     // }
+    pub fn with_widths(mut self, widths: Vec<WidthRule>) -> Self {
+        self.widths = widths;
+        self
+    }
     pub fn with_comments(mut self, comments: HashMap<String, String>) -> Self {
         self.comments = Some(comments);
         self
@@ -383,6 +399,7 @@ impl<'a> TomlFields<'a> {
             root_value: self.root_value,
             aliases: self.aliases.clone(),
             comments: self.comments.clone(),
+            widths: self.widths.clone(),
         }
     }
 
@@ -451,7 +468,41 @@ impl<'a> TomlFields<'a> {
             root_value: self.root_value,
             aliases: self.aliases.clone(),
             comments: self.comments.clone(),
+            widths: self.widths.clone(),
         }
+    }
+
+    /// The width the macro input names for a field, if it names one.
+    ///
+    /// A pattern is tried against the path the constant is made at and against the path of
+    /// the key in the file, so that an alias is given its width by naming the original. Two
+    /// patterns that name different widths for one key are a [`Problem`], since nothing
+    /// says which was meant.
+    fn width_of(&self, field: &TomlField<'a>) -> Result<Option<Width>, Problem> {
+        let original = to_valid_ident(field.toml_path.as_deref().unwrap_or(&field.path));
+        let mut found: Option<&WidthRule> = None;
+        for rule in &self.widths {
+            if !(rule.matcher.is_match(&field.path) || rule.matcher.is_match(&original)) {
+                continue;
+            }
+            match found {
+                Some(first) if first.width != rule.width => {
+                    return Err(Problem {
+                        key: field.key.clone(),
+                        reason: format!(
+                            "is given the width `{}` by `{}` and `{}` by `{}`. Name one.",
+                            first.width.name(),
+                            first.pattern,
+                            rule.width.name(),
+                            rule.pattern
+                        ),
+                    })
+                },
+                Some(_) => {},
+                None => found = Some(rule),
+            }
+        }
+        Ok(found.map(|rule| rule.width))
     }
 
     pub fn get_field(&self, idx: usize) -> Option<&TomlField<'a>> {
@@ -640,7 +691,8 @@ impl<'a> TomlFields<'a> {
         // constants for this module
         let mut consts = Vec::new();
         for f in relative_children_fields.iter().filter(|f| !f.is_table()) {
-            match bind_value(&f.key, f.value) {
+            let bound = self.width_of(f).and_then(|width| bind_value(&f.key, f.value, width));
+            match bound {
                 Ok((ty, value)) => consts.push(Const {
                     name: to_valid_ident(&f.name).to_uppercase(),
                     comment: f.comment.clone(),

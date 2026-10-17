@@ -29,6 +29,7 @@ apply.
   - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
   - Negated patterns for exclusion (`!` prefix)
 - Alias support for renaming paths (`alias foo = bar.baz`)
+- A type for numbers (`size.voxel_pixels: u32`), checked against the value
 - Preserves comments from toml as doc comments
 - Binds strings, integers, floats, booleans and arrays of one kind, which may be arrays in turn
   - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
@@ -67,8 +68,8 @@ its [readme](tomlfuse-core/README.md) for the shape of it.
 `examples/` holds one example per piece of the pattern language, each reading a slice of the
 same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
 [value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs),
-[aliases](examples/aliases.rs), [alternation](examples/alternation.rs) and
-[nesting](examples/nested_modules.rs). Two more put them together:
+[aliases](examples/aliases.rs), [alternation](examples/alternation.rs),
+[widths](examples/widths.rs) and [nesting](examples/nested_modules.rs). Two more put them together:
 [`whole_app_config`](examples/whole_app_config.rs) uses the whole language on one file, and
 [`build_metadata_and_config`](examples/build_metadata_and_config.rs) runs `package!` and
 `file!` in one binary.
@@ -118,6 +119,40 @@ fn main() {
     println!("Timeout: {}", shortcuts::TIMEOUT); // from toml's `config.params.timeout`
 }
 ```
+
+### Saying what type a number is
+
+An integer binds as `i64` and a float as `f64`, so a consumer that wants a `u8`, a `u32` or an
+`f32` would write a narrowing function for each constant. A type after the pattern does it:
+
+```rust,ignore
+use tomlfuse::file;
+
+file! {
+    "path/to/engine.toml"
+
+    [size]
+    size.voxel_pixels: u32  // pub const VOXEL_PIXELS: u32
+    size.zoom: f32
+
+    [shortcuts]
+    alias frames = timing.frames: u16 // the width is of the original key
+}
+```
+
+The types are `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32` and `f64`. A value
+that does not fit, a `300` for a `u8` or a float too large for an `f32`, stops the build with a
+message naming the key, instead of wrapping into something that does. An integer is not
+widened to a float or a float narrowed to an integer, so a key written `3` cannot be an `f32`:
+write `3.0` in the file. A width on a string or a boolean is refused too, which is how a
+pattern too broad for its type is found, so `server.*: u16` over a table with a `host` in it is
+an error naming `server.host`.
+
+A width applies to every number in an array. A `f32` loses digits it did not have room for, the
+way any `f64` does when it is narrowed, and only a magnitude it cannot hold is an error.
+
+A key that two patterns give different widths is an error as well, since nothing says which was
+meant.
 
 ### Binding from package (Cargo.toml)
 

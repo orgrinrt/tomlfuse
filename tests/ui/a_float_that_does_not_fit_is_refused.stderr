@@ -1,0 +1,12 @@
+error: tomlfuse: `size.reach` is 1e39, which does not fit f32 (magnitude up to 3.4028235e38).
+ --> tests/ui/a_float_that_does_not_fit_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/widths.toml"
+6 | |
+7 | |     [size]
+8 | |     size.reach: f32
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,10 @@
+[size]
+voxel_pixels = 17
+frames = 30
+offset = -12
+ratio = 0.5
+unsaid = 7
+steps = [1, 2, 3]
+
+[tuning]
+tone-soft = 0.55

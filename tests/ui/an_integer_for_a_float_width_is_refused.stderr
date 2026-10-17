@@ -1,0 +1,12 @@
+error: tomlfuse: `size.count` is an integer, and `f32` is a float type. Write it with a decimal point in the file if a float is meant.
+ --> tests/ui/an_integer_for_a_float_width_is_refused.rs:4:1
+  |
+4 | / tomlfuse::file! {
+5 | |     "tests/ui/widths.toml"
+6 | |
+7 | |     [size]
+8 | |     size.count: f32
+9 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `tomlfuse::file` (in Nightly builds, run with -Z macro-backtrace for more info)

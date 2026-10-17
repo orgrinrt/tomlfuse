@@ -6,17 +6,23 @@
 
 //! Turns what `tomlfuse-core` bound into the Rust the macros expand to.
 
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::LitStr;
-use tomlfuse_core::{Lit, Module, Source, Ty};
+use tomlfuse_core::{FloatTy, IntTy, Lit, Module, Source, Ty};
 
 /// The tokens for the type a constant is declared with.
 pub fn ty(ty: &Ty) -> TokenStream2 {
     match ty {
         Ty::Str => quote! { &'static str },
-        Ty::Int => quote! { i64 },
-        Ty::Float => quote! { f64 },
+        Ty::Int(int) => {
+            let int = format_ident!("{}", int.name());
+            quote! { #int }
+        },
+        Ty::Float(float) => {
+            let float = format_ident!("{}", float.name());
+            quote! { #float }
+        },
         Ty::Bool => quote! { bool },
         Ty::Slice(elem) => {
             let elem = self::ty(elem);
@@ -25,17 +31,41 @@ pub fn ty(ty: &Ty) -> TokenStream2 {
     }
 }
 
-/// The tokens for the value a constant is given.
-pub fn lit(lit: &Lit) -> TokenStream2 {
-    match lit {
-        Lit::Str(s) => quote! { #s },
-        Lit::Int(i) => quote! { #i },
-        Lit::Float(f) => quote! { #f },
-        Lit::Bool(b) => quote! { #b },
-        Lit::List(elems) => {
-            let elems = elems.iter().map(self::lit);
+/// The tokens for the value a constant of type `ty` is given.
+///
+/// The literal carries the type's suffix, so it is of the type whatever the constant is
+/// later used as. The value has already been checked against the width, which is why the
+/// narrowing here is not a cast that can lose anything.
+pub fn lit(ty: &Ty, lit: &Lit) -> TokenStream2 {
+    match (ty, lit) {
+        (_, Lit::Str(s)) => quote! { #s },
+        (_, Lit::Bool(b)) => quote! { #b },
+        (Ty::Int(int), Lit::Int(i)) => {
+            let i = *i;
+            let literal = match int {
+                IntTy::I8 => Literal::i8_suffixed(i as i8),
+                IntTy::I16 => Literal::i16_suffixed(i as i16),
+                IntTy::I32 => Literal::i32_suffixed(i as i32),
+                IntTy::I64 => Literal::i64_suffixed(i),
+                IntTy::U8 => Literal::u8_suffixed(i as u8),
+                IntTy::U16 => Literal::u16_suffixed(i as u16),
+                IntTy::U32 => Literal::u32_suffixed(i as u32),
+                IntTy::U64 => Literal::u64_suffixed(i as u64),
+            };
+            quote! { #literal }
+        },
+        (Ty::Float(float), Lit::Float(f)) => {
+            let literal = match float {
+                FloatTy::F32 => Literal::f32_suffixed(*f as f32),
+                FloatTy::F64 => Literal::f64_suffixed(*f),
+            };
+            quote! { #literal }
+        },
+        (Ty::Slice(elem), Lit::List(elems)) => {
+            let elems = elems.iter().map(|e| self::lit(elem, e));
             quote! { &[#(#elems),*] }
         },
+        (ty, lit) => unreachable!("a {lit:?} bound as {ty:?}, which core does not produce"),
     }
 }
 
@@ -133,7 +163,7 @@ fn contents(module: &Module) -> TokenStream2 {
     for constant in &module.consts {
         let name = format_ident!("{}", constant.name);
         let ty = ty(&constant.ty);
-        let value = lit(&constant.value);
+        let value = lit(&constant.ty, &constant.value);
         let comment = get_doc_comment(constant.comment.as_deref());
         tokens.extend(quote! {
             #comment
@@ -173,34 +203,62 @@ mod tests {
     #[test]
     fn test_string_value_tokens() {
         assert_eq!(ty(&Ty::Str).to_string(), "& 'static str");
-        assert_eq!(lit(&Lit::Str("test".into())).to_string(), "\"test\"");
+        assert_eq!(lit(&Ty::Str, &Lit::Str("test".into())).to_string(), "\"test\"");
     }
 
     #[test]
     fn test_numeric_value_tokens() {
-        assert_eq!(ty(&Ty::Int).to_string(), "i64");
+        let i64_ty = Ty::Int(IntTy::I64);
+        assert_eq!(ty(&i64_ty).to_string(), "i64");
         // numeric literal includes type suffix in output
-        assert_eq!(lit(&Lit::Int(42)).to_string(), "42i64");
-        assert_eq!(ty(&Ty::Float).to_string(), "f64");
-        assert!(lit(&Lit::Float(std::f64::consts::PI)).to_string().starts_with("3.14"));
+        assert_eq!(lit(&i64_ty, &Lit::Int(42)).to_string(), "42i64");
+        let f64_ty = Ty::Float(FloatTy::F64);
+        assert_eq!(ty(&f64_ty).to_string(), "f64");
+        assert!(lit(&f64_ty, &Lit::Float(std::f64::consts::PI)).to_string().starts_with("3.14"));
+    }
+
+    #[test]
+    fn a_width_is_the_type_and_the_suffix_of_its_literal() {
+        for (int, name) in [
+            (IntTy::I8, "i8"),
+            (IntTy::I16, "i16"),
+            (IntTy::I32, "i32"),
+            (IntTy::U8, "u8"),
+            (IntTy::U16, "u16"),
+            (IntTy::U32, "u32"),
+            (IntTy::U64, "u64"),
+        ] {
+            assert_eq!(ty(&Ty::Int(int)).to_string(), name);
+            assert_eq!(lit(&Ty::Int(int), &Lit::Int(7)).to_string(), format!("7{name}"));
+        }
+        assert_eq!(lit(&Ty::Int(IntTy::I8), &Lit::Int(-5)).to_string(), "- 5i8");
+        assert_eq!(ty(&Ty::Float(FloatTy::F32)).to_string(), "f32");
+        assert_eq!(lit(&Ty::Float(FloatTy::F32), &Lit::Float(0.5)).to_string(), "0.5f32");
+    }
+
+    #[test]
+    fn a_list_gives_its_elements_the_element_type() {
+        let list = Ty::Slice(Box::new(Ty::Int(IntTy::U8)));
+        assert_eq!(ty(&list).to_string(), "& 'static [u8]");
+        assert_eq!(lit(&list, &Lit::List(vec![Lit::Int(1), Lit::Int(2)])).to_string(), "& [1u8 , 2u8]");
     }
 
     #[test]
     fn test_boolean_value_tokens() {
         assert_eq!(ty(&Ty::Bool).to_string(), "bool");
-        assert_eq!(lit(&Lit::Bool(true)).to_string(), "true");
-        assert_eq!(lit(&Lit::Bool(false)).to_string(), "false");
+        assert_eq!(lit(&Ty::Bool, &Lit::Bool(true)).to_string(), "true");
+        assert_eq!(lit(&Ty::Bool, &Lit::Bool(false)).to_string(), "false");
     }
 
     #[test]
     fn test_array_tokens() {
         let strings = Ty::Slice(Box::new(Ty::Str));
         assert_eq!(ty(&strings).to_string(), "& 'static [& 'static str]");
-        let list = lit(&Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())])).to_string();
+        let list = lit(&strings, &Lit::List(vec![Lit::Str("a".into()), Lit::Str("b".into())])).to_string();
         assert!(list.contains("\"a\""));
         assert!(list.contains("\"b\""));
         // this is proper form because tokens display with space delims
-        assert_eq!(lit(&Lit::List(vec![])).to_string(), "& []");
+        assert_eq!(lit(&strings, &Lit::List(vec![])).to_string(), "& []");
     }
 
     #[test]

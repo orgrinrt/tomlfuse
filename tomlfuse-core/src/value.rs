@@ -5,7 +5,7 @@
 //------------------------------------------------------------------------------
 
 use crate::error::Problem;
-use crate::model::{Lit, Ty};
+use crate::model::{FloatTy, IntTy, Lit, Ty, Width};
 use toml::Value;
 
 /// The type of a value, before an empty array has had its say.
@@ -33,8 +33,8 @@ impl Shape {
     fn kind(&self) -> &'static str {
         match self {
             Shape::Leaf(Ty::Str) => "a string",
-            Shape::Leaf(Ty::Int) => "an integer",
-            Shape::Leaf(Ty::Float) => "a float",
+            Shape::Leaf(Ty::Int(_)) => "an integer",
+            Shape::Leaf(Ty::Float(_)) => "a float",
             Shape::Leaf(Ty::Bool) => "a boolean",
             Shape::Leaf(Ty::Slice(_)) | Shape::List(_) => "an array",
         }
@@ -63,22 +63,87 @@ fn refuse(key: &str, reason: impl Into<String>) -> Problem {
 /// Converts a toml `Value` into the type it binds as and the value it binds to.
 ///
 /// Supports strings, integers, floats, booleans and arrays of one kind, which may be arrays
-/// in turn. Anything else has no constant to bind as and is a [`Problem`] naming `key`: an
+/// in turn. An integer is bound as `i64` and a float as `f64` unless `width` names another
+/// type, which every number in the value is then bound as, and which a number that does not
+/// fit is a [`Problem`] for. Anything else has no constant to bind as and is a [`Problem`]
+/// naming `key`: an
 /// array of mixed kinds, a table inside an array, and a datetime. They used to be bound as
 /// the text of their `Debug` or `Display` output, so a row that was meant to be a record
 /// built into a string, and failed, or did not, wherever it was read.
 #[cold]
-pub fn bind_value(key: &str, value: &Value) -> Result<(Ty, Lit), Problem> {
-    let (shape, lit) = shaped(key, value)?;
+pub fn bind_value(
+    key: &str,
+    value: &Value,
+    width: Option<Width>,
+) -> Result<(Ty, Lit), Problem> {
+    let (shape, lit) = shaped(key, value, width)?;
     Ok((shape.into_ty(), lit))
 }
 
-fn shaped(key: &str, value: &Value) -> Result<(Shape, Lit), Problem> {
+/// A width is for numbers. On anything else the pattern that gave it was too broad, and that
+/// is said so rather than ignored.
+fn not_a_number(key: &str, kind: &str, width: Width) -> Problem {
+    refuse(
+        key,
+        format!("is {kind}, and the width `{}` applies to integers and floats only.", width.name()),
+    )
+}
+
+fn shaped(key: &str, value: &Value, width: Option<Width>) -> Result<(Shape, Lit), Problem> {
     match value {
-        Value::String(s) => Ok((Shape::Leaf(Ty::Str), Lit::Str(s.clone()))),
-        Value::Integer(i) => Ok((Shape::Leaf(Ty::Int), Lit::Int(*i))),
-        Value::Float(f) => Ok((Shape::Leaf(Ty::Float), Lit::Float(*f))),
-        Value::Boolean(b) => Ok((Shape::Leaf(Ty::Bool), Lit::Bool(*b))),
+        Value::String(s) => match width {
+            Some(width) => Err(not_a_number(key, "a string", width)),
+            None => Ok((Shape::Leaf(Ty::Str), Lit::Str(s.clone()))),
+        },
+        Value::Boolean(b) => match width {
+            Some(width) => Err(not_a_number(key, "a boolean", width)),
+            None => Ok((Shape::Leaf(Ty::Bool), Lit::Bool(*b))),
+        },
+        Value::Integer(i) => match width {
+            None => Ok((Shape::Leaf(Ty::Int(IntTy::I64)), Lit::Int(*i))),
+            Some(Width::Int(ty)) => {
+                let (min, max) = ty.bounds();
+                if (min..=max).contains(&i128::from(*i)) {
+                    Ok((Shape::Leaf(Ty::Int(ty)), Lit::Int(*i)))
+                } else {
+                    Err(refuse(
+                        key,
+                        format!("is {i}, which does not fit {} ({min} to {max}).", ty.name()),
+                    ))
+                }
+            },
+            Some(Width::Float(ty)) => Err(refuse(
+                key,
+                format!(
+                    "is an integer, and `{}` is a float type. Write it with a decimal point in \
+                     the file if a float is meant.",
+                    ty.name()
+                ),
+            )),
+        },
+        Value::Float(f) => match width {
+            None => Ok((Shape::Leaf(Ty::Float(FloatTy::F64)), Lit::Float(*f))),
+            Some(Width::Float(ty)) => {
+                // Infinity and NaN fit anything. A finite value too large to fit would become
+                // infinity, which is not what the file says.
+                if f.is_finite() && f.abs() > ty.largest() {
+                    Err(refuse(
+                        key,
+                        format!(
+                            "is {f:e}, which does not fit {} (magnitude up to {}).",
+                            ty.name(),
+                            ty.largest_text()
+                        ),
+                    ))
+                } else {
+                    Ok((Shape::Leaf(Ty::Float(ty)), Lit::Float(*f)))
+                }
+            },
+            Some(Width::Int(ty)) => Err(refuse(
+                key,
+                format!("is a float, and `{}` is an integer type.", ty.name()),
+            )),
+        },
         // TODO: proper DateTime support via chrono or similar
         Value::Datetime(_) => Err(refuse(
             key,
@@ -95,7 +160,7 @@ fn shaped(key: &str, value: &Value) -> Result<(Shape, Lit), Problem> {
             let mut shape: Option<Shape> = None;
             let mut elems = Vec::with_capacity(arr.len());
             for (i, elem) in arr.iter().enumerate() {
-                let (elem_shape, elem_lit) = shaped(&format!("{key}[{i}]"), elem)?;
+                let (elem_shape, elem_lit) = shaped(&format!("{key}[{i}]"), elem, width)?;
                 shape = Some(match shape {
                     None => elem_shape,
                     Some(so_far) => merge(so_far, elem_shape).map_err(|(a, b)| {
@@ -122,9 +187,16 @@ mod tests {
 
     /// Binds the value written as `value = <text>`.
     fn bound(text: &str) -> Result<(Ty, Lit), Problem> {
-        let parsed: Value = format!("value = {text}").parse().unwrap();
-        bind_value("value", parsed.get("value").unwrap())
+        bound_at(text, None)
     }
+
+    /// The same at a width.
+    fn bound_at(text: &str, width: Option<&str>) -> Result<(Ty, Lit), Problem> {
+        let parsed: Value = format!("value = {text}").parse().unwrap();
+        bind_value("value", parsed.get("value").unwrap(), width.map(|w| Width::parse(w).unwrap()))
+    }
+
+    const INT: Ty = Ty::Int(IntTy::I64);
 
     fn slice(of: Ty) -> Ty {
         Ty::Slice(Box::new(of))
@@ -132,15 +204,21 @@ mod tests {
 
     #[test]
     fn test_string_value_conversion() {
-        let (ty, val) = bind_value("k", &Value::String("test".to_string())).unwrap();
+        let (ty, val) = bind_value("k", &Value::String("test".to_string()), None).unwrap();
         assert_eq!(ty, Ty::Str);
         assert_eq!(val, Lit::Str("test".into()));
     }
 
     #[test]
     fn test_numeric_values() {
-        assert_eq!(bind_value("k", &Value::Integer(42)).unwrap(), (Ty::Int, Lit::Int(42)));
-        assert_eq!(bind_value("k", &Value::Float(PI)).unwrap(), (Ty::Float, Lit::Float(PI)));
+        assert_eq!(
+            bind_value("k", &Value::Integer(42), None).unwrap(),
+            (Ty::Int(IntTy::I64), Lit::Int(42))
+        );
+        assert_eq!(
+            bind_value("k", &Value::Float(PI), None).unwrap(),
+            (Ty::Float(FloatTy::F64), Lit::Float(PI))
+        );
     }
 
     #[test]
@@ -166,16 +244,16 @@ mod tests {
     #[test]
     fn an_array_of_arrays_is_a_slice_of_slices() {
         let (ty, _) = bound("[[1, 2], [3]]").unwrap();
-        assert_eq!(ty, slice(slice(Ty::Int)));
+        assert_eq!(ty, slice(slice(INT)));
     }
 
     #[test]
     fn an_empty_array_takes_the_kind_of_the_arrays_beside_it() {
         // Whichever side it is on. Taking the first element's type for the lot typed the
         // first of these as arrays of strings, and the integers inside it would not compile.
-        assert_eq!(bound("[[], [1, 2]]").unwrap().0, slice(slice(Ty::Int)));
-        assert_eq!(bound("[[1, 2], []]").unwrap().0, slice(slice(Ty::Int)));
-        assert_eq!(bound("[[], [[1]]]").unwrap().0, slice(slice(slice(Ty::Int))));
+        assert_eq!(bound("[[], [1, 2]]").unwrap().0, slice(slice(INT)));
+        assert_eq!(bound("[[1, 2], []]").unwrap().0, slice(slice(INT)));
+        assert_eq!(bound("[[], [[1]]]").unwrap().0, slice(slice(slice(INT))));
         // With nothing beside it to say, it stays an array of strings, as it always was.
         assert_eq!(bound("[[], []]").unwrap().0, slice(slice(Ty::Str)));
     }
@@ -222,5 +300,82 @@ mod tests {
             "tomlfuse: `value` is a datetime, which has no type to bind as. Write it as a \
              string if its text is what is wanted."
         );
+    }
+
+    #[test]
+    fn an_integer_binds_at_the_width_named() {
+        let (ty, val) = bound_at("17", Some("u8")).unwrap();
+        assert_eq!(ty, Ty::Int(IntTy::U8));
+        assert_eq!(val, Lit::Int(17));
+        assert_eq!(bound_at("-12", Some("i16")).unwrap().0, Ty::Int(IntTy::I16));
+    }
+
+    #[test]
+    fn an_integer_at_the_edge_of_its_width_fits_and_one_past_it_does_not() {
+        assert!(bound_at("255", Some("u8")).is_ok());
+        assert!(bound_at("0", Some("u8")).is_ok());
+        assert!(bound_at("-128", Some("i8")).is_ok());
+        assert!(bound_at("127", Some("i8")).is_ok());
+        assert!(bound_at("9223372036854775807", Some("u64")).is_ok());
+
+        for (text, width, bounds) in [
+            ("256", "u8", "0 to 255"),
+            ("-1", "u8", "0 to 255"),
+            ("128", "i8", "-128 to 127"),
+            ("-129", "i8", "-128 to 127"),
+            ("65536", "u16", "0 to 65535"),
+            ("-1", "u64", "0 to 18446744073709551615"),
+        ] {
+            let err = bound_at(text, Some(width)).unwrap_err();
+            assert_eq!(err.key, "value");
+            assert_eq!(
+                err.reason,
+                format!("is {text}, which does not fit {width} ({bounds})."),
+                "{text} as {width}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_float_binds_at_the_width_named_and_a_float_too_large_does_not_fit() {
+        assert_eq!(bound_at("0.5", Some("f32")).unwrap().0, Ty::Float(FloatTy::F32));
+        assert_eq!(bound_at("1e300", Some("f64")).unwrap().0, Ty::Float(FloatTy::F64));
+        assert!(bound_at("3.4028234e38", Some("f32")).is_ok());
+        assert!(bound_at("-3.4028234e38", Some("f32")).is_ok());
+
+        let err = bound_at("1e39", Some("f32")).unwrap_err();
+        assert_eq!(
+            err.reason,
+            "is 1e39, which does not fit f32 (magnitude up to 3.4028235e38)."
+        );
+        assert!(bound_at("-1e39", Some("f32")).is_err());
+        // Infinity is what the file says, and fits.
+        assert!(bound_at("inf", Some("f32")).is_ok());
+    }
+
+    #[test]
+    fn a_width_does_not_convert_between_integers_and_floats() {
+        let err = bound_at("0.5", Some("u8")).unwrap_err();
+        assert_eq!(err.reason, "is a float, and `u8` is an integer type.");
+        let err = bound_at("3", Some("f32")).unwrap_err();
+        assert!(err.reason.starts_with("is an integer, and `f32` is a float type."), "{err}");
+    }
+
+    #[test]
+    fn a_width_on_anything_but_a_number_is_refused() {
+        let err = bound_at(r#""text""#, Some("u32")).unwrap_err();
+        assert_eq!(err.reason, "is a string, and the width `u32` applies to integers and floats only.");
+        let err = bound_at("true", Some("u32")).unwrap_err();
+        assert!(err.reason.starts_with("is a boolean"), "{err}");
+    }
+
+    #[test]
+    fn the_width_reaches_every_number_in_an_array_and_names_the_one_that_does_not_fit() {
+        let (ty, _) = bound_at("[[1, 2], [3]]", Some("u8")).unwrap();
+        assert_eq!(ty, slice(slice(Ty::Int(IntTy::U8))));
+
+        let err = bound_at("[[1, 2], [3, 300]]", Some("u8")).unwrap_err();
+        assert_eq!(err.key, "value[1][1]");
+        assert!(err.reason.contains("does not fit u8"), "{err}");
     }
 }

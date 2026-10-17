@@ -1,0 +1,5 @@
+error: tomlfuse: `u7` is not a width. Use one of i8, i16, i32, i64, u8, u16, u32, u64, f32, f64.
+ --> tests/ui/an_unknown_width_is_refused.rs:8:24
+  |
+8 |     size.voxel_pixels: u7
+  |                        ^^

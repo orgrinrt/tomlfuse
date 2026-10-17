@@ -5,8 +5,8 @@
 //------------------------------------------------------------------------------
 
 use crate::error::{Error, Problem};
-use crate::field::TomlFields;
-use crate::model::Module;
+use crate::field::{TomlFields, WidthRule};
+use crate::model::{Module, Width};
 use crate::pattern::Pattern;
 use crate::source::Source;
 use globset::GlobSetBuilder;
@@ -27,6 +27,10 @@ pub struct Section {
     /// Keys that go by another name, where the key is the alias and the value is the path of
     /// the original.
     pub aliases: HashMap<Pattern, Pattern>,
+    /// The type to bind the numbers of each key at, where it is not `i64` or `f64`. A pattern
+    /// is matched against the key's path in the file, or against the path of the original
+    /// when the key goes by an alias.
+    pub widths: Vec<(Pattern, Width)>,
 }
 
 /// What binding a [`Section`] came to.
@@ -64,12 +68,21 @@ pub fn bind(source: &Source, section: &Section) -> Result<Bound, Error> {
             reason: e.to_string(),
         })
     };
+    let mut widths = Vec::with_capacity(section.widths.len());
+    for (pattern, width) in &section.widths {
+        widths.push(WidthRule {
+            pattern: pattern.clone(),
+            matcher: pattern.compile()?.compile_matcher(),
+            width: *width,
+        });
+    }
     let fields = TomlFields::from(source.value())
         .with_inclusion_globs(Some(build_set(inclusions, &section.include)?))
         .with_exclusion_globs(Some(build_set(exclusions, &section.exclude)?))
         .with_pat_literals(literals)
         .with_comments(source.comments().clone())
         .with_aliases(Some(section.aliases.clone()))
+        .with_widths(widths)
         .build();
 
     let (mut module, problems) = fields.to_module();
@@ -83,6 +96,7 @@ pub fn bind(source: &Source, section: &Section) -> Result<Bound, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{FloatTy, IntTy, Ty};
     use std::path::PathBuf;
 
     fn source(text: &str) -> Source {
@@ -132,6 +146,74 @@ mod tests {
 
         let bound = bind(&source, &section(&["row.fine"])).unwrap();
 
+        assert!(bound.problems.is_empty(), "{:?}", bound.problems);
+    }
+
+    fn at(widths: &[(&str, &str)], patterns: &[&str]) -> Section {
+        Section {
+            widths: widths
+                .iter()
+                .map(|(p, w)| (Pattern::new(*p), Width::parse(w).unwrap()))
+                .collect(),
+            ..section(patterns)
+        }
+    }
+
+    fn ty_of(bound: &Bound, name: &str) -> Ty {
+        bound.module.consts.iter().find(|c| c.name == name).unwrap().ty.clone()
+    }
+
+    #[test]
+    fn a_width_reaches_the_keys_its_pattern_matches_and_no_others() {
+        let source = source("[size]\nvoxel = 17\nframes = 30\nratio = 0.5\n");
+
+        let bound = bind(&source, &at(&[("size.{voxel,frames}", "u8"), ("size.ratio", "f32")], &["size.*"])).unwrap();
+
+        assert!(bound.problems.is_empty(), "{:?}", bound.problems);
+        assert_eq!(ty_of(&bound, "VOXEL"), Ty::Int(IntTy::U8));
+        assert_eq!(ty_of(&bound, "FRAMES"), Ty::Int(IntTy::U8));
+        assert_eq!(ty_of(&bound, "RATIO"), Ty::Float(FloatTy::F32));
+
+        let bound = bind(&source, &at(&[("size.voxel", "u8")], &["size.*"])).unwrap();
+        assert_eq!(ty_of(&bound, "FRAMES"), Ty::Int(IntTy::I64));
+        assert_eq!(ty_of(&bound, "RATIO"), Ty::Float(FloatTy::F64));
+    }
+
+    #[test]
+    fn a_key_with_a_dash_takes_the_width_of_the_pattern_that_spells_it_with_an_underscore() {
+        let source = source("[tuning]\ntone-soft = 0.55\n");
+
+        let bound = bind(&source, &at(&[("tuning.tone_soft", "f32")], &["tuning.*"])).unwrap();
+
+        assert_eq!(ty_of(&bound, "TONE_SOFT"), Ty::Float(FloatTy::F32));
+    }
+
+    #[test]
+    fn an_alias_takes_the_width_given_for_the_original() {
+        let source = source("[size]\nvoxel = 17\n");
+        let mut section = at(&[("size.voxel", "u16")], &[]);
+        section.aliases.insert(Pattern::new("px"), Pattern::new("size.voxel"));
+
+        let bound = bind(&source, &section).unwrap();
+
+        assert!(bound.problems.is_empty(), "{:?}", bound.problems);
+        assert_eq!(ty_of(&bound, "PX"), Ty::Int(IntTy::U16));
+    }
+
+    #[test]
+    fn two_different_widths_for_one_key_are_a_problem_and_the_same_one_twice_is_not() {
+        let source = source("[size]\nvoxel = 17\n");
+
+        let bound = bind(&source, &at(&[("size.*", "u8"), ("size.voxel", "u32")], &["size.*"])).unwrap();
+        assert_eq!(bound.problems.len(), 1);
+        assert_eq!(bound.problems[0].key, "size.voxel");
+        assert_eq!(
+            bound.problems[0].reason,
+            "is given the width `u8` by `size.*` and `u32` by `size.voxel`. Name one."
+        );
+        assert!(bound.module.consts.is_empty());
+
+        let bound = bind(&source, &at(&[("size.*", "u8"), ("size.voxel", "u8")], &["size.*"])).unwrap();
         assert!(bound.problems.is_empty(), "{:?}", bound.problems);
     }
 }
