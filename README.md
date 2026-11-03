@@ -8,95 +8,23 @@
 [![GitHub Issues](https://img.shields.io/github/issues/orgrinrt/tomlfuse.svg)](https://github.com/orgrinrt/tomlfuse/issues)
 ![License](https://img.shields.io/github/license/orgrinrt/tomlfuse?color=%23009689)
 
-> Toml fields bound into typed build-time constants with patterns and hierarchies.
+> Bind toml fields into properly typed build-time constants with flexible patterns and hierarchies.
 
 </div>
 
-## Relationship to `confound`
+A toml file that holds a value the code needs, a tile size, a timeout, the version of a dependency, is usually read at runtime or copied by hand into a constant that then drifts from the file. `tomlfuse` is a set of three proc macros, `file!`, `package!` and `workspace!`, that read the toml while the compiler runs and expand what was selected into `pub const` items, so the file stays the one place the value is written and the code gets a constant of the right type.
 
-[`confound`](https://www.github.com/orgrinrt/confuse) generalises this approach beyond `toml` to
-other file formats, and uses this crate for the `toml` case rather than reimplementing it. This
-crate is the working `toml` implementation and is not deprecated. All three macros are
-covered by integration tests, and the [limitations](#limitations-and-future-work) below still
-apply.
+Which keys are taken is decided by glob patterns written inside the macro, with `*` for one segment, `**` for any number of them, `{a,b}` for alternatives and a `!` prefix for exclusion. Tables become nested modules, the comment above a key becomes the doc comment of its constant, and an alias can rename a path where two sections would otherwise collide. The expansion names nothing outside `core` and allocates nothing, so it works in a `#![no_std]` crate with no allocator, and the toml is bound as a build input, which means editing it rebuilds whatever was generated from it.
 
-## Features
+The reading and walking itself lives in [`tomlfuse-core`](https://crates.io/crates/tomlfuse-core), a plain library that knows nothing about Rust tokens, and the macros are a thin layer over it.
 
-- Compile-time binding of toml values to rust constants
-- Flexibly preserve table hierarchies as nested modules
-- Glob pattern support for selecting what to bind and what not to
-  - `*` for one segment, `**` for any number
-  - Alternation, `config.{debug,logging}.*`, matching any one of the alternatives
-  - Negated patterns for exclusion (`!` prefix)
-- Alias support for renaming paths (`alias foo = bar.baz`)
-- A type for numbers (`size.voxel_pixels: u32`), checked against the value, which also makes
-  arrays fixed arrays (`[[u8; 3]; 16]`) with their lengths read from the file
-- Preserves comments from toml as doc comments
-- Binds strings, integers, floats, booleans and arrays of one kind, which may be arrays in turn
-  - *tables* translate to rust modules, so that all of this is possible at constant time without excessive complexity
-  - a value with no constant to be, an array of mixed kinds, a table inside an array or a
-    datetime, is a `compile_error!` that names its key in the file, rather than being bound as
-    its own text
-- Works in `#![no_std]`, with or without an allocator
-
-### `no_std` and no allocator
-
-A binding names nothing outside `core`. Every value becomes a `pub const` of `&'static str`,
-`&'static [T]`, `[T; N]`, an integer, a float or `bool`, wrapped in `pub mod` and doc comments, plus one
-`include_bytes!` binding the toml as a build input so editing it rebuilds what came out of it.
-None of that is `std`, and none of it allocates: a `const` lives in the binary and a
-`&'static [T]` points into it.
-
-There are `no_std` and `no_alloc` features. Neither switches anything, because there is nothing
-to switch; they exist so a workspace that turns them on across every dependency can name them
-here. `tests/no_std_consumer.rs` is what holds the guarantee, by building a real `#![no_std]`
-crate against this one with a control proving that crate genuinely has no `std` to fall back on.
-
-This crate itself always builds with `std`. It is a proc macro, so it runs on the host inside
-the compiler.
-
-### Using the walker without the macros
-
-The toml reading and the field walker live in
-[`tomlfuse-core`](https://crates.io/crates/tomlfuse-core), a plain library that knows nothing
-about Rust tokens, and the macros here are a thin layer over it. A build script or a tool that
-wants the same constants from the same toml, in a shader header for instance, reads a `Source`,
-describes what to take in a `Section`, and gets back a tree of modules whose constants each
-carry a name, a type, a value and the comment above the key. See
-[its page on crates.io](https://crates.io/crates/tomlfuse-core) for the shape of it.
-
-### Examples
-
-`examples/` holds one example per piece of the pattern language, each reading a slice of the
-same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs),
-[value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs),
-[aliases](examples/aliases.rs), [alternation](examples/alternation.rs),
-[widths](examples/widths.rs) and [nesting](examples/nested_modules.rs). Two more put them together:
-[`whole_app_config`](examples/whole_app_config.rs) uses the whole language on one file, and
-[`build_metadata_and_config`](examples/build_metadata_and_config.rs) runs `package!` and
-`file!` in one binary.
-
-```bash
-cargo run --example whole_app_config
-```
-
-
-## Installation
+## Usage
 
 ```bash
 cargo add tomlfuse
 ```
 
-Or in `Cargo.toml`:
-
-```toml
-[dependencies]
-tomlfuse = "0.0.5"
-```
-
-## Usage
-
-### Binding from a file
+`file!` takes a path, then one or more `[module]` headers, each followed by the patterns that belong in it.
 
 ```rust,ignore
 use tomlfuse::file;
@@ -104,102 +32,26 @@ use tomlfuse::file;
 file! {
     "path/to/config.toml"
 
-    [settings] // <-- the module name that contains all the matches of the below patterns
-    config.*           // = include all config.* paths
-    !config.internal.* // = ...but exclude internals!
+    [settings]         // the module that holds every match of the patterns below
+    config.*           // all config.* paths
+    !config.internal.* // except the internals
 
     [shortcuts]
-    // you can create aliases for example to solve naming conflicts e.g when 
-    // bringing in and mixing multiple sections of a toml file that could have same named fields.
-    // note that aliases are intended for singular values (including tables though!)
-    // so they should not contain glob patterns.
+    // an alias renames one path, which is for singular values and tables, so it takes no globs
     alias timeout = config.params.timeout
 }
 
 fn main() {
-    println!("Debug mode: {}", settings::DEBUG); // from toml's `config.debug`
-    println!("Timeout: {}", shortcuts::TIMEOUT); // from toml's `config.params.timeout`
+    println!("Debug mode: {}", settings::DEBUG);     // config.debug
+    println!("Timeout: {}", shortcuts::TIMEOUT);     // config.params.timeout
 }
 ```
 
-### Saying what type a number is
-
-An integer binds as `i64` and a float as `f64`, so a consumer that wants a `u8`, a `u32` or an
-`f32` would write a narrowing function for each constant. A type after the pattern does it:
+`package!` and `workspace!` work the same way over a `Cargo.toml`, which is the usual reason to bind anything at all, metadata of the crate into the crate. When the path is left out, `package!` uses `CARGO_MANIFEST_DIR` and walks upwards if that is missing, and `workspace!` looks for the first manifest holding `[workspace]` from the crate being built upwards, falling back to the crate's own manifest.
 
 ```rust,ignore
-use tomlfuse::file;
+use tomlfuse::{package, workspace};
 
-file! {
-    "path/to/engine.toml"
-
-    [size]
-    size.voxel_pixels: u32  // pub const VOXEL_PIXELS: u32
-    size.zoom: f32
-
-    [shortcuts]
-    alias frames = timing.frames: u16 // the width is of the original key
-}
-```
-
-The types are `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32` and `f64`. A value
-that does not fit, a `300` for a `u8` or a float too large for an `f32`, stops the build with a
-message naming the key, instead of wrapping into something that does. An integer is not
-widened to a float or a float narrowed to an integer, so a key written `3` cannot be an `f32`:
-write `3.0` in the file. A width on a string or a boolean is refused too, which is how a
-pattern too broad for its type is found, so `server.*: u16` over a table with a `host` in it is
-an error naming `server.host`.
-
-A float narrowed to an `f32` loses digits it did not have room for, the way any `f64` does, and
-only a magnitude it cannot hold is an error. Whether it fits is decided by narrowing it, so
-`3.4028235e38`, the largest `f32`, fits; a value that would round to infinity is an error, and
-so is a non-zero value too small to be anything but `0.0`. Infinity and NaN have no literal to
-bind as and are refused, with or without a width.
-
-The widths are the ten above and not `usize` or `isize`. Their size is the target's, and a
-procedural macro runs on the host, so it would be checking a value against a pointer width that
-may not be the one the code is built for. Bind it as `u32` or `u64` and convert where it is
-used: `as usize` works in a `const` too.
-
-A pattern that gives a width must reach at least one number in the file. One that matches no key,
-a typo like `size.voxle: u8`, or only tables, is an error naming the pattern, where it would
-otherwise leave the key it was meant for at `i64` without a word. Spell it the way the walker
-does, which is with an underscore for a dash.
-
-#### Arrays
-
-A width applies to every number in an array, and gives the array a fixed length: the lengths are
-read from the file, so a table of colours is the array an API taking one asks for.
-
-```toml
-[palette]
-world = [[34, 139, 34], [139, 69, 19], [70, 130, 180]]
-```
-
-```rust,ignore
-file! {
-    "path/to/engine.toml"
-
-    [colours]
-    palette.world: u8   // pub const WORLD: [[u8; 3]; 3]
-}
-```
-
-Add a fourth colour to the file and the type becomes `[[u8; 3]; 4]`; a colour with two channels
-is an error naming the key, since a fixed array has one length. Without a width the same value
-is what it has always been, a `&'static [&'static [i64]]`, whose rows may differ in length. An
-empty array with a width is a `[u8; 0]`.
-
-A key that two patterns give different widths is an error as well, since nothing says which was
-meant.
-
-### Binding from package (Cargo.toml)
-
-```rust,ignore
-use tomlfuse::package;
-
-// note that when path is omitted, the one from env, i.e. `CARGO_MANIFEST_DIR`, is used,
-// or if that is missing too, the closest we can find walking dirs upwards until system root
 package! {
     [pkg]
     package.*
@@ -207,126 +59,74 @@ package! {
     [deps]
     dependencies.*
 }
-// the main reason this variant (and the workspace one too) of the macro exist is for convenience,
-// since one common use case is binding metadata from the package/workspace into the codebase.
-// not having to resolve and/or input the paths explicitly reduces the friction of using this crate
-// and also decreases the vectors for human error
 
-fn main() {
-    println!("Package name: {}", pkg::NAME);
-    println!("Package version: {}", pkg::VERSION);
-    println!("Tokio version: {}", deps::tokio::VERSION);
-    println!("Serde features: {:?}", deps::serde::FEATURES);
-    // note that currently this crate supports homogenous arrays, 
-    // so the features const would be, as expected, an array of strings!
-}
-```
-
-### Binding from workspace
-
-Works like the package example, over the workspace's `Cargo.toml` instead of the crate's.
-[`tests/integration_test_workspace.rs`](tests/integration_test_workspace.rs) holds it to that.
-
-When the path is omitted, looks for the first `Cargo.toml` that contains `[workspace]`,
-starting at the crate being built and going upwards until system root. A crate that is in no
-workspace gets its own manifest.
-
-```rust,ignore
-use tomlfuse::workspace;
 workspace! {
     [workspace]
     members.*
-    !members.foo
+    !members.foo   // workspace::FOO does not compile
 }
+
 fn main() {
-    println!("Workspace members: {:?}", workspace::MEMBERS);
-    // while members array in the toml *does* contain a field `foo`...
-    println!("Workspace's foo member: {:?}", workspace::FOO);
-    // ...this will *not* compile due to the exclusion!
+    println!("{} {}", pkg::NAME, pkg::VERSION);
+    println!("Tokio: {}", deps::tokio::VERSION);
+    println!("Serde features: {:?}", deps::serde::FEATURES);
 }
 ```
 
-### Limitations and future work
+An integer binds as `i64` and a float as `f64` unless the pattern says otherwise. A type after the pattern, one of `i8` to `i64`, `u8` to `u64`, `f32` and `f64`, binds every number it reaches at that width, and checks the value against it while the build runs, so a `300` for a `u8` stops with a message naming the key. An integer is not widened to a float, which means a key written `3` cannot be an `f32` and wants `3.0` in the file. `usize` and `isize` are left out on purpose, since a proc macro runs on the host and would be checking against a pointer width that may not be the target's, and `as usize` works in a `const` anyway.
 
-#### Value types and patterns
+A width on an array gives it a fixed length read from the file, and a pattern with a width has to reach at least one number, so a typo in the key is an error instead of a silent `i64`.
 
-- An array holds one kind. A mixed one (e.g. `[1, "a", 3.14]`), a table inside an array and a
-  datetime are refused with an error naming the key, so a row meant as a record cannot quietly
-  become a string
-<details>
-<summary>*Click to expand notes*</summary>
+```rust,ignore
+file! {
+    "path/to/engine.toml"
 
-  - Until now these were bound as the `Debug` or `Display` text of the value, which built
-    successfully and failed, or did not, wherever the constant was read
-  - A datetime can be written as a string in the file if its text is what is wanted
-  - Later down the line, as an optional alternative, a mixed array could translate to an array of option tuples by merging the unique types of all the elements in the array as options wherein each
-    `Some` value represents the element, and writing some convenience traits around the concept to get the values out of the array in a type-safe but "natural" way, while remaining build-time constant and avoiding dynamic dispatch
-    - A tradeoff between runtime performance on one side, and binary size and compilation time on the other,
-      *if* someone truly needs this
-  - However, I'm not sure this is a common enough use-case to make a priority right now, I would be interested to hear any use cases that would require this though
-</details>
+    [size]
+    size.voxel_pixels: u32     // pub const VOXEL_PIXELS: u32
 
-- As of right now, more complex globs are not covered in tests (e.g.
-  `config.*.timeout`), and may or may not work in different cases
-<details>
-<summary>*Click to expand notes*</summary>
+    [colours]
+    palette.world: u8          // pub const WORLD: [[u8; 3]; 3] for three rows of three
+}
+```
 
-  - These tests and possibly some refactoring for increased robustness are however being implemented in very near future as it is fundamental to the concept to handle these
-  - The most common use case would be the patterns supported right now, so this crate releases initially with just them stabilized
-</details>
+Values with no constant to be, which are an array of mixed kinds, a table inside an array, a datetime, infinity and NaN, are a `compile_error!` naming the key in the file. A datetime that is wanted for its text can be written as a string in the toml.
 
-- Alternation is supported, spelled `{a,b,c}` with commas rather than pipes, which is what
-  globset reads. Character classes, `[a-z]`, are not, and will not be
-<details>
-<summary>*Click to expand notes*</summary>
+## Example
 
-  - A module header in this macro is `[name]`, and the macro input is a Rust token stream,
-    which carries no newlines. So `config.debug` on one line followed by `[classes]` on the
-    next is the same sequence of tokens as `config.debug[classes]`, and a parser that reads
-    a bracket after an identifier as a character class swallows the next module header
-    instead of starting a module
-  - That was implemented and then removed for exactly this reason. Each pattern passed when
-    tested alone, and the module following one went missing when they were tested together
-  - The delimiter is spoken for. Alternation has no such clash
-</details>
+The `examples/` directory holds one example for each piece of the pattern language, each reading a slice of the same [`app.toml`](examples/app.toml): [sections](examples/one_section.rs), [value types](examples/every_value_type.rs), [exclusions](examples/exclusions.rs), [aliases](examples/aliases.rs), [alternation](examples/alternation.rs), [widths](examples/widths.rs) and [nesting](examples/nested_modules.rs). Two put them together, [`whole_app_config`](examples/whole_app_config.rs) over one file with the whole language, and [`build_metadata_and_config`](examples/build_metadata_and_config.rs) which runs `package!` and `file!` in one binary.
 
-- Aliasing currently only supports singular values (including tables), but not batches (i.e pattern aliases)
-<details>
-<summary>*Click to expand notes*</summary>
+```bash
+cargo run --example whole_app_config
+```
 
-  - In future there will be support for simple batch aliasing by using the source path's segment that matches a star to place into the alias pattern's same index star
-    - This will however have some constraints that make it less useful than I'd ultimately want it to be, like:
-      - This would only work with patterns that contain nothing but glob stars (however the amount of those could be any)
-      - If there are multiple stars, then both sides of the alias assignment must match the same amount of stars, otherwise it won't work, which may or may not be obvious and would probably be confusing to the user
-  - In the long run it would be better to resolve these at parse time rather than by string matching, but that is outside this crate's scope and would mean integrating another crate that already does it.
-    - I would be interested to hear suggestions in the meanwhile
-</details> 
+## Motivation
 
-#### Extended features
+Constants that come from configuration tend to get written twice, once in the file where a person edits them and once in the source where the compiler needs them, and nothing says the two agree. Reading the file in a build script solves that, although it leaves the type-mapping, the module layout and the rebuild tracking to be written again in every project. `tomlfuse` does that part once, with the selection of keys kept in the macro call next to where the constants are used, so a reader of the code sees what is taken from the file without opening it.
 
-- While constant time binding is the most useful case for something like this, it is not the only one, and I would like to explore the possibility of allowing for dynamic binding as well with some static safety measures such as creating a schematic based on a toml file for type-safe binding, and allowing sane statically typed instances of the toml file to be created and mutated at runtime with minimal, preferably zero dynamic dispatch overhead
-- While this crate is named `tomlfuse`, it could just as well be abstracted away and made implementable for any file format
-<details>
-<summary>*Click to expand notes*</summary>
+## Extras
 
-  - It will be great to be able to confound people outside of toml alone
-    - However, I hate that making this more generic kills the perfect opportunity to adapt this concept to ron... as
-      `ronfuse`...
-      - but I digress
-</details>
+### Status
 
+Pre-1.0, so a minor version may break and a patch version does not. The minimum supported rust is `1.88.0`, which is what `globset`, a direct dependency, declares, and raising it counts as a breaking change. The crate itself always builds with `std`, being a proc macro that runs inside the compiler.
 
-## Compatibility
+### Cargo features
 
-This crate requires rust `1.88.0` or later. That is the version `globset`, a direct dependency, declares, so it is the lowest anything that depends on this crate can build with. Bumping msrv is considered a breaking change and will be done in a minor version.
+| Feature | Default | Effect |
+|---|---|---|
+| `no_std` | off | Names the guarantee that the expansion needs nothing outside `core`, held by `tests/no_std_consumer.rs`. Switches nothing, so a workspace that enables it everywhere can name it here |
+| `no_alloc` | off | Implies `no_std`, and names that the expansion allocates nothing |
 
-### Versioning policy
+### Limitations
 
-Minor versions may have breaking changes, which can include bumping msrv.
+Complex globs such as `config.*.timeout` are not covered by tests yet and may or may not work in every case. Alternation is spelled with commas, `{a,b,c}`, as `globset` reads it, and character classes, `[a-z]`, are not supported, because a module header is also written in brackets and the macro input carries no newlines to tell the two apart. Aliases take a single path and not a batch, so an alias with a star in it is refused. Arrays are homogeneous, and binding mixed ones as tuples of options is possible later if someone has a use for it, in which case an issue describing it is welcome.
 
-Patch versions are backwards compatible.
+### The other crates
+
+[`tomlfuse-core`](https://crates.io/crates/tomlfuse-core) is the toml reader and field walker without any macro in it, for a build script or a tool that wants the same constants from the same file, in a shader header for instance.
 
 ## Support
+
+Feel free to contribute! If unsure about wasting work, the best practice is to throw in an issue describing what you'd do, and only then commit to writing a big PR, because chances are, it might not be something that belongs here. However, forks are always a valid choice and we'd encourage everyone to experiment and have their own takes on this. When doing this, do mind the license(s) though!
 
 Whether you use this project, have learned something from it, or just like it, please consider supporting it by buying me a coffee, so I can dedicate more time on open-source projects like this :)
 
